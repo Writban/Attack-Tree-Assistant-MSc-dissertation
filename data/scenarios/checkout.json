@@ -1,0 +1,10 @@
+{
+  "id": "checkout",
+  "name": "E-commerce Checkout",
+  "brief": "Card payments, order creation, and fulfillment via web/API.",
+  "gold_must_have": ["Card Testing", "Negative Pricing / Quantity Logic Abuse", "Insecure Direct Object Reference on Orders"],
+  "gold_low_value": ["Physical POS Skimmer (out of scope)"],
+  "quiz": [
+    {"q":"What is card testing?","correct":"Trying many small transactions to validate stolen cards","choices":["Refunding purchases","Testing coupons","Trying many small transactions to validate stolen cards"]}
+  ]
+}

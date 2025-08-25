@@ -1,0 +1,10 @@
+{
+  "id": "iot",
+  "name": "Smart Thermostat",
+  "brief": "Local pairing + cloud control with firmware updates.",
+  "gold_must_have": ["Default Credentials","Firmware Update Interception"],
+  "gold_low_value": ["TEMPEST Side-channel (out of scope)"],
+  "quiz": [
+    {"q":"Why are default credentials risky?","correct":"They allow easy unauthorized access if unchanged","choices":["They slow devices","They drain battery","They allow easy unauthorized access if unchanged"]}
+  ]
+}

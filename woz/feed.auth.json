@@ -1,0 +1,15 @@
+{
+  "scenario": "auth",
+  "entries": [
+    {
+      "id": "w0123",
+      "when": { "selected_parent_alias": "Password Reset" },
+      "what": {
+        "text": "Predictable Password Reset Token",
+        "children": ["Token reuse across channels","Long-lived token"],
+        "score_boost": 0.35,
+        "why": ["Common weak PRNG", "Direct path to account takeover"]
+      }
+    }
+  ]
+}

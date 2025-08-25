@@ -1,0 +1,111 @@
+html, body, #app { height: 100%; margin: 0; background: #0f141a; color: #e5e7eb; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+
+#toolbar { padding: 8px; border-bottom: 1px solid #263140; display: flex; gap: 8px; align-items: center; }
+
+#toolbar button { background: #1f2937; color: #fff; border: 1px solid #334155; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+
+#paper-container {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  right: 360px;  /* leaves room for the side panel */
+  bottom: 0;
+  background: #0b0f14;
+  z-index: 1;    /* sits above page background, below the panel */
+}
+
+
+#kb-panel { position: absolute; top: 48px; right: 0; bottom: 0; width: 360px; border-left: 1px solid #263140; background: #121821; display: flex; flex-direction: column; }
+
+.tabs { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid #263140; }
+.tabs button { flex: 1; background: #1b2330; color: #cbd5e1; border: 1px solid #334155; border-radius: 8px; padding: 8px; cursor: pointer; }
+.tabs button.active { background: #243044; color: #fff; }
+.tab-body { padding: 10px; overflow: auto; }
+.hidden { display: none !important; }
+.card { border: 1px solid #334155; border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #0f1826; }
+.card .title { font-weight: 600; }
+.badge { display: inline-block; margin-left: 6px; font-size: 12px; padding: 2px 6px; border-radius: 6px; border: 1px solid #3b4556; }
+.btn { background: #1f2937; color: #fff; border: 1px solid #334155; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+.row { display: flex; align-items: center; gap: 6px; }
+.small { font-size: 12px; color: #94a3b8; }
+.chip { position: fixed; left: 12px; bottom: 12px; background:#0b1220; border:1px solid #2a3445; border-radius: 10px; padding: 6px 10px; z-index: 9999; }
+
+#sel-label { color: #9ca3af; margin-left: auto; }
+
+#toolbar button.active { outline: 2px solid #60a5fa; }
+
+#app { position: relative; }
+
+/* show a hand on the canvas, and a grab while panning */
+#paper-container { cursor: grab; }
+#paper-container.grabbing { cursor: grabbing; }
+
+/* small visible link ports */
+.joint-port-body { cursor: crosshair; }
+
+/* Ensure arrowheads are always rendered */
+.joint-link .marker-arrowheads,
+.joint-link .marker-target {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Hide JointJS link editing overlays (green triangles, vertices) */
+.link-tools,
+.marker-vertices,
+.link-tools .tool-source-arrowhead,
+.link-tools .tool-target-arrowhead,
+.link-tools .tool-remove,
+.link-tools .tool-options {
+  display: none !important;
+}
+
+/* Keep our actual arrowheads visible */
+.joint-link .marker-target {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* --- Kill JointJS link tools (the teal triangles & vertices) --- */
+.link-tools,
+.tools,
+g.link-tools,
+g.tools,
+.link-tools *,
+.tools *,
+.marker-vertices,
+.marker-vertices *,
+.tool-source-arrowhead,
+.tool-target-arrowhead,
+.tool-remove,
+.tool-options,
+.tool-vertices,
+.tool-segment,
+.tool-label,
+.tool-arrowhead {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Keep our actual arrowheads visible */
+.joint-link .marker-target,
+.joint-link .marker-arrowheads {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Final shutoff if something injects tool groups */
+svg g.link-tools, svg g.tools { display: none !important; }
+
+.modal.hidden { display: none; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; z-index: 50; }
+.modal-card { background: #0f172a; border: 1px solid #334155; padding: 16px; width: 320px; border-radius: 10px; }
+.modal-card h3 { margin: 0 0 10px; }
+.modal-card label { display:block; font-size: 12px; color:#a3a3a3; margin: 8px 0 2px; }
+.modal-card input { width:100%; padding:8px; background:#111827; border:1px solid #334155; color:#e5e7eb; border-radius:6px; }
+.modal-card .row { display:flex; gap:8px; margin-top:12px; justify-content:flex-end; }

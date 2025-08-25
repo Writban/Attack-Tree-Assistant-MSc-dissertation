@@ -1,0 +1,25 @@
+{
+  "experiment": { "mode": "kb", "scenario": "auth" },
+  "matching": {
+    "minScore": 0.45,
+    "fuzzyThreshold": 0.86,
+    "weights": {
+      "exact": 1.0, "alias": 0.92, "keyword": 0.62, "regex": 0.75, "fuzzy": 0.52,
+      "contextBonus": 0.20, "parentBonus": 0.15
+    },
+    "normalizers": {
+      "lowercase": true, "stripPunctuation": true,
+      "collapseWhitespace": true, "removeStopwords": true
+    },
+    "stopwords": ["a","an","and","as","at","be","by","for","from","in","into","is","it","its","of","on","or","that","the","their","to","with","via","over"],
+    "maxReturned": 10
+  },
+  "pruning": {
+    "flagThreshold": 0.45,
+    "contextMismatchPenalty": 0.20,
+    "weights": { "likelihood": 0.5, "impact": 0.4, "cost": -0.1 }
+  },
+  "logging": { "enabled": true, "maxEntries": 5000 },
+  "woz": { "enabled": false, "remoteUrl": "woz/feed.auth.json", "pollMs": 4000, "maxBackoffMs": 60000 },
+  "ui": { "debounceMs": 180 }
+}

@@ -1,0 +1,71 @@
+[
+  {
+    "id": "PRT",
+    "name": "Predictable Password Reset Token",
+    "aliases": ["reset token guess", "weak PRNG token"],
+    "keywords": ["token", "reset", "forgot password", "predictable", "prng"],
+    "contexts": ["web","api","auth"],
+    "children": ["Token reuse across channels","Long-lived token"],
+    "lay_explain": "The reset link uses a guessable code, so attackers can take over accounts.",
+    "why_it_matters": "Compromises any user with an outstanding reset.",
+    "mitigations": ["High-entropy tokens","Short expiry","One-time use","Rate limiting"],
+    "likelihood": 0.6, "impact": 0.9, "cost_hint": 0.3,
+    "preferred_parents": ["Password Reset","Account Recovery"]
+  },
+  {
+    "id": "CS",
+    "name": "Credential Stuffing",
+    "aliases": ["password reuse attack"],
+    "keywords": ["reuse","breach","stuffing"],
+    "contexts": ["web","auth"],
+    "children": ["No rate limiting on login","No MFA"],
+    "lay_explain": "Attackers try leaked email/password pairs from other sites to log in.",
+    "why_it_matters": "Many users reuse passwords; easy large-scale compromise.",
+    "mitigations": ["Rate limiting","IP risk scoring","MFA","Password reset prompts"],
+    "likelihood": 0.8, "impact": 0.7, "cost_hint": 0.2
+  },
+  {
+    "id": "NRL",
+    "name": "No Rate Limiting on Reset",
+    "aliases": ["no throttle reset"],
+    "keywords": ["rate limit","reset","brute force"],
+    "contexts": ["web","auth"],
+    "lay_explain": "Reset flows allow unlimited attempts so tokens and emails can be brute forced.",
+    "why_it_matters": "Enables guessing and automation at scale.",
+    "mitigations": ["Rate limits","Captcha","Anomaly detection"],
+    "likelihood": 0.7, "impact": 0.6, "cost_hint": 0.1
+  },
+  {
+    "id": "NPQ",
+    "name": "Negative Pricing / Quantity Logic Abuse",
+    "aliases": ["price manipulation", "cart math bug"],
+    "keywords": ["checkout","cart","logic"],
+    "contexts": ["web","checkout","api"],
+    "lay_explain": "Tricks the cart math to produce negative totals or free items.",
+    "why_it_matters": "Leads to fraud and revenue loss.",
+    "mitigations": ["Server-side validation","Order total clamps","Idempotent APIs"],
+    "likelihood": 0.4, "impact": 0.8, "cost_hint": 0.4
+  },
+  {
+    "id": "CFW",
+    "name": "Firmware Update Interception",
+    "aliases": ["evil firmware in the middle"],
+    "keywords": ["iot","firmware","update"],
+    "contexts": ["iot","device"],
+    "lay_explain": "Intercepts the device update to install a malicious firmware.",
+    "why_it_matters": "Gives persistent control of the device.",
+    "mitigations": ["Signed updates","TLS pinning","Rollback protection"],
+    "likelihood": 0.5, "impact": 0.9, "cost_hint": 0.7
+  },
+  {
+    "id": "DEF",
+    "name": "Default Credentials",
+    "aliases": ["admin:admin", "factory password"],
+    "keywords": ["iot","default","password"],
+    "contexts": ["iot","device","lan"],
+    "lay_explain": "Device ships with a default password that users may not change.",
+    "why_it_matters": "Allows easy unauthorized access.",
+    "mitigations": ["Force change on first use","Disable defaults","Randomized per device"],
+    "likelihood": 0.8, "impact": 0.7, "cost_hint": 0.1
+  }
+]
