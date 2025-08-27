@@ -5,14 +5,17 @@
   <title>Attack Tree Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Load JointJS CSS FIRST so our stylesheet can override it -->
+  <!-- Vendor CSS: load JointJS first so our CSS can override it if needed -->
+  <!-- For fully offline use, vendor these files locally (e.g., /vendor/jointjs.css) and update the href -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.7/joint.css" />
-  <!-- Our overrides (e.g., hiding link tools, cursor styles, etc.) -->
+
+  <!-- App styles -->
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <div id="app">
 
+    <!-- Top toolbar (editor controls) -->
     <div id="toolbar">
       <button id="btn-new">New root</button>
       <button id="btn-add">Add node</button>
@@ -27,16 +30,21 @@
       <span id="sel-label">No selection</span>
     </div>
 
-    <!-- Study chip -->
+    <!-- Study/status chip (session + study flow controls) -->
     <div id="study-toolbar" class="chip hidden">
       <span id="study-mode">mode: ?</span> ·
       <span id="study-scenario">scenario: ?</span>
+      <!-- Study flow controls -->
+      <button id="btn-start-assist">Start assist</button>
+      <button id="btn-finish-assist">Finish &amp; snapshot</button>
       <button id="btn-download-log">Download log</button>
+      <button id="btn-end-session">End session</button>
     </div>
 
+    <!-- Canvas container (JointJS paper mounts here) -->
     <div id="paper-container"></div>
 
-    <!-- Assistant panel -->
+    <!-- Assistant panel (RQ1/RQ2/RQ3) -->
     <div id="kb-panel">
       <div class="tabs">
         <button data-tab="suggest" class="active">Suggest</button>
@@ -48,45 +56,66 @@
       <div class="tab-body hidden" id="tab-explain"></div>
     </div>
 
-    <!-- Session modal -->
-<div id="session-modal" class="modal hidden">
+    <div id="session-modal" class="modal hidden">
   <div class="modal-card">
     <h3>Start Session</h3>
+
     <label>Participant ID
       <input id="part-id" placeholder="P01" />
     </label>
+
     <label>Session ID
-      <input id="sess-id" placeholder="2025-08-25T12-00" />
+      <input id="sess-id" placeholder="2025-08-27T12-00" />
     </label>
-    <div class="row">
+
+    <fieldset style="margin-top:10px">
+      <legend style="font-size:12px;color:#a3a3a3">Choose scenario</legend>
+      <label style="display:block;margin:4px 0">
+        <input type="radio" name="scenario" value="auth" checked />
+        1) University portal account takeover
+      </label>
+      <label style="display:block;margin:4px 0">
+        <input type="radio" name="scenario" value="checkout" />
+        2) Online shop: receive goods without paying
+      </label>
+      <label style="display:block;margin:4px 0">
+        <input type="radio" name="scenario" value="iot_cam" />
+        3) Smart camera: view live feed without permission
+      </label>
+      <label style="display:block;margin:4px 0">
+        <input type="radio" name="scenario" value="doc_link" />
+        4) Private document link leakage
+      </label>
+    </fieldset>
+
+    <div class="row" style="margin-top:10px">
       <button id="btn-start-session">Start</button>
     </div>
   </div>
 </div>
 
-<!-- Add an End button next to Download log -->
-<script>
-  // add an End Session button beside Download log after DOM is ready
-  document.addEventListener('DOMContentLoaded', () => {
-    const chip = document.getElementById('study-toolbar');
-    if (!chip) return;
-    const endBtn = document.createElement('button');
-    endBtn.id = 'btn-end-session';
-    endBtn.textContent = 'End session';
-    chip.insertBefore(endBtn, document.getElementById('btn-download-log'));
-  });
-</script>
 
+    <!-- Scenario brief modal (shown before Baseline starts) -->
+    <div id="brief-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Scenario</h3>
+        <p id="brief-text" style="white-space:pre-wrap;margin-top:6px;line-height:1.4"></p>
+        <div class="row">
+          <button id="btn-brief-start">Start baseline</button>
+        </div>
+      </div>
+    </div>
 
   </div>
+  <!-- end of #app -->
 
-  <!-- Vendor scripts -->
+  <!-- Vendor scripts (CDN). For offline, vendor locally and update the src paths. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.5.0/backbone-min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.7/joint.min.js"></script>
 
-  <!-- App scripts -->
+  <!-- App scripts (order matters) -->
   <script src="js/utils.js"></script>
   <script src="js/kb-core.js"></script>
   <script src="js/kb-woz.js"></script>

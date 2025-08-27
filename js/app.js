@@ -330,28 +330,31 @@ function ensureSessionStart() {
   const part = document.getElementById('part-id');
   const sess = document.getElementById('sess-id');
   const startBtn = document.getElementById('btn-start-session');
-  const endBtn = document.getElementById('btn-end-session');
 
   // prefill session id
   if (sess) sess.value = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
 
   const start = () => {
+    // read selected scenario from radio group
+    const chosen = document.querySelector('input[name="scenario"]:checked');
+    const scenario_id = (chosen && chosen.value) || 'auth';
+
     const participant_id = (part.value || '').trim() || 'Px';
     const session_id = (sess.value || '').trim() || new Date().toISOString().replace(/[:.]/g,'-');
-    Session.set({ participant_id, session_id });
-    try { KB.core.log('session_started', { participant_id, session_id }); } catch {}
-    modal.classList.add('hidden');
-  };
 
-  const end = () => {
-    const s = Session.get();
-    try { KB.core.log('session_ended', { participant_id: s?.participant_id, session_id: s?.session_id }); } catch {}
-    alert('Session ended. Please click "Download log" to save your data.');
+    // persist on window (read by study.js)
+    window.__kbSession = { participant_id, session_id, scenario_id };
+
+    try { KB.core.log('session_started', { participant_id, session_id, scenario_id }); } catch {}
+    modal.classList.add('hidden');
+
+    // Tell the study controller we have a scenario now
+    document.dispatchEvent(new CustomEvent('kb:session_started', { detail: { participant_id, session_id, scenario_id } }));
   };
 
   if (startBtn) startBtn.onclick = start;
-  if (endBtn) endBtn.onclick = end;
 
   // show if not already set
-  if (!Session.get()) modal.classList.remove('hidden');
+  if (!window.__kbSession) modal.classList.remove('hidden');
 }
+

@@ -67,5 +67,229 @@
     "why_it_matters": "Allows easy unauthorized access.",
     "mitigations": ["Force change on first use","Disable defaults","Randomized per device"],
     "likelihood": 0.8, "impact": 0.7, "cost_hint": 0.1
+  },
+
+  {
+    "id": "credential_stuffing",
+    "name": "credential stuffing",
+    "aliases": ["credential reuse","reuse leaked credentials","reused creds","leaked creds"],
+    "scenarios": ["auth","practice_streaming","iot_cam"],
+    "severity": "high",
+    "description": "Try email/password pairs leaked from other sites to log in.",
+    "why": "People often reuse passwords across services.",
+    "children": [],
+    "comms": "Using previously leaked email/password combinations to log in because users reuse passwords."
+  },
+  {
+    "id": "password_spraying",
+    "name": "password spraying",
+    "aliases": ["spray","common password tries","guess common passwords"],
+    "scenarios": ["auth","practice_streaming"],
+    "severity": "medium",
+    "description": "Try a few common passwords across many accounts to avoid lockout.",
+    "children": [],
+    "comms": "Trying a small set of common passwords across many users to dodge lockouts."
+  },
+  {
+    "id": "phishing_credentials",
+    "name": "phishing for credentials",
+    "aliases": ["phish password","fake login page","credential phishing"],
+    "scenarios": ["auth","practice_streaming","iot_cam","doc_link"],
+    "severity": "high",
+    "description": "Trick the user into entering their password or code on a fake site.",
+    "children": [],
+    "comms": "Tricking someone with a convincing message or page to reveal their password."
+  },
+  {
+    "id": "shoulder_surfing_password",
+    "name": "shoulder surfing password",
+    "aliases": ["watch typing","observe password","look over shoulder"],
+    "scenarios": ["auth","practice_streaming"],
+    "severity": "low",
+    "description": "Observe the user typing a password on a shared device.",
+    "children": [],
+    "comms": "Watching someone type their password on a keyboard or screen."
+  },
+  {
+    "id": "password_reset_flow",
+    "name": "password reset flow",
+    "aliases": ["forgot password","reset via email"],
+    "scenarios": ["auth","practice_streaming"],
+    "severity": "high",
+    "description": "Use the ‘Forgot password’ feature to reset access.",
+    "children": ["intercept_reset_email"]
+  },
+  {
+    "id": "intercept_reset_email",
+    "name": "intercept reset email",
+    "aliases": ["email takeover","access victim email","reset link capture"],
+    "scenarios": ["auth","practice_streaming"],
+    "severity": "high",
+    "description": "Access the victim’s email or device to click the reset link.",
+    "children": ["reused_email_password","shared_device_still_logged_in"],
+    "comms": "If you can open the victim’s mailbox or a device where they’re logged in, you can complete the reset."
+  },
+  {
+    "id": "reused_email_password",
+    "name": "weak/reused email password",
+    "aliases": ["reuse creds on email","email credential stuffing"],
+    "scenarios": ["auth","practice_streaming","doc_link"],
+    "severity": "high",
+    "description": "Log into the victim’s email using reused or weak creds.",
+    "children": []
+  },
+  {
+    "id": "shared_device_still_logged_in",
+    "name": "shared device still logged in",
+    "aliases": ["borrow unlocked laptop","browser session remains"],
+    "scenarios": ["auth","practice_streaming","doc_link"],
+    "severity": "medium",
+    "description": "Use a device where the account is already logged in to access links or content.",
+    "children": []
+  },
+  {
+    "id": "lockout_rate_limit_bypass",
+    "name": "lockout/rate limit bypass",
+    "aliases": ["rate limit evasion","avoid lockout","slow attempts"],
+    "scenarios": ["auth","practice_streaming"],
+    "severity": "medium",
+    "description": "Space out attempts or rotate IPs to avoid triggering lockout.",
+    "children": []
+  },
+  {
+    "id": "use_stolen_account_saved_card",
+    "name": "use stolen account with saved card",
+    "aliases": ["account takeover checkout","ato saved card"],
+    "scenarios": ["checkout","practice_food"],
+    "severity": "high",
+    "description": "Take over an account that has a saved card and place an order.",
+    "children": []
+  },
+  {
+    "id": "use_leaked_card_details",
+    "name": "use leaked card details",
+    "aliases": ["card testing","stolen card"],
+    "scenarios": ["checkout","practice_food"],
+    "severity": "high",
+    "description": "Use leaked/stolen card details to pay for goods.",
+    "children": []
+  },
+  {
+    "id": "stack_discounts_referrals",
+    "name": "stack discounts/referrals",
+    "aliases": ["coupon stacking","promo stacking"],
+    "scenarios": ["checkout","practice_food"],
+    "severity": "medium",
+    "description": "Combine multiple discounts beyond what’s intended.",
+    "children": []
+  },
+  {
+    "id": "free_shipping_threshold_abuse",
+    "name": "abuse free shipping threshold",
+    "aliases": ["hit free shipping threshold","bundle to free shipping"],
+    "scenarios": ["checkout","practice_food"],
+    "severity": "low",
+    "description": "Manipulate basket to qualify for free shipping while abusing promos.",
+    "children": []
+  },
+  {
+    "id": "ship_to_accessible_pickup",
+    "name": "ship to accessible pickup point",
+    "aliases": ["parcel locker","public pickup"],
+    "scenarios": ["checkout","practice_food"],
+    "severity": "medium",
+    "description": "Use a pickup point that the fraudster can access.",
+    "children": []
+  },
+  {
+    "id": "item_not_received_refund",
+    "name": "item-not-received refund abuse",
+    "aliases": ["refund fraud","INR claim"],
+    "scenarios": ["checkout","practice_food"],
+    "severity": "medium",
+    "description": "Claim a refund while still collecting the parcel.",
+    "children": []
+  },
+  {
+    "id": "join_home_wifi",
+    "name": "join home wi-fi",
+    "aliases": ["wifi password guessing","wps abuse","default wifi password"],
+    "scenarios": ["iot_cam"],
+    "severity": "high",
+    "description": "Connect to the home network to reach the device locally.",
+    "children": []
+  },
+  {
+    "id": "access_local_interface_rtsp",
+    "name": "access local interface/rtsp",
+    "aliases": ["rtsp access","local web ui"],
+    "scenarios": ["iot_cam"],
+    "severity": "high",
+    "description": "Use the camera’s local interface or RTSP stream on the LAN.",
+    "children": []
+  },
+  {
+    "id": "default_admin_password",
+    "name": "default admin password",
+    "aliases": ["default creds","factory password"],
+    "scenarios": ["iot_cam"],
+    "severity": "high",
+    "description": "Device admin panel left on factory credentials.",
+    "children": []
+  },
+  {
+    "id": "default_stream_key",
+    "name": "default stream key",
+    "aliases": ["unchanged stream key"],
+    "scenarios": ["iot_cam"],
+    "severity": "medium",
+    "description": "Streaming key not changed from default.",
+    "children": []
+  },
+  {
+    "id": "phishing_for_link",
+    "name": "phishing for the link",
+    "aliases": ["phish link","fake request for file"],
+    "scenarios": ["doc_link"],
+    "severity": "medium",
+    "description": "Trick the owner into sharing the document link.",
+    "children": []
+  },
+  {
+    "id": "social_engineering_share",
+    "name": "social engineering for sharing",
+    "aliases": ["ask for link","convince to share"],
+    "scenarios": ["doc_link"],
+    "severity": "medium",
+    "description": "Persuade someone to share the link directly.",
+    "children": []
+  },
+  {
+    "id": "predictable_link_enumeration",
+    "name": "predictable link pattern + enumeration",
+    "aliases": ["guessable url","predict path pattern"],
+    "scenarios": ["doc_link"],
+    "severity": "high",
+    "description": "Learn naming/path patterns and try likely URLs.",
+    "children": []
+  },
+  {
+    "id": "find_exposed_links_public",
+    "name": "find exposed links in public repos/search",
+    "aliases": ["search leaked links","public repo links"],
+    "scenarios": ["doc_link"],
+    "severity": "medium",
+    "description": "Search code, tickets, or the web for links left public.",
+    "children": []
+  },
+  {
+    "id": "use_shared_device_history",
+    "name": "use shared device/browser history",
+    "aliases": ["borrow unlocked laptop","shared session"],
+    "scenarios": ["doc_link","auth"],
+    "severity": "medium",
+    "description": "Open the document from a device where the link was already used.",
+    "children": []
   }
 ]
+
