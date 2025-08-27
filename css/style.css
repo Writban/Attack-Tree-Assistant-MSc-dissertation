@@ -111,3 +111,19 @@ svg g.link-tools, svg g.tools { display: none !important; }
 .modal-card .row { display:flex; gap:8px; margin-top:12px; justify-content:flex-end; }
 
 
+/* Scenario Guide widget */
+.help { position: fixed; right: 16px; bottom: 16px; z-index: 40; font-size: 14px; }
+#help-toggle {
+  background: #0ea5e9; color: #0b1320; border: none; padding: 8px 10px;
+  border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.35); cursor: pointer; font-weight: 600;
+}
+.help .help-body {
+  margin-top: 8px; width: 380px; max-height: 50vh; overflow: auto;
+  background: #0f172a; color: #e5e7eb; border: 1px solid #334155;
+  border-radius: 12px; padding: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+.help.collapsed .help-body { display: none; }
+.help .help-title { font-weight: 700; margin-bottom: 6px; }
+.help .help-content p { margin: 6px 0; line-height: 1.35; }
+.help .help-content ul { margin: 6px 0 6px 18px; }
+.help .help-content li { margin: 3px 0; }

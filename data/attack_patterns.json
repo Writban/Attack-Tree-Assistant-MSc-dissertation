@@ -73,7 +73,7 @@
     "id": "credential_stuffing",
     "name": "credential stuffing",
     "aliases": ["credential reuse","reuse leaked credentials","reused creds","leaked creds"],
-    "scenarios": ["auth","practice_streaming","iot_cam"],
+    "scenarios": ["auth","practice_streaming","iot"],
     "severity": "high",
     "description": "Try email/password pairs leaked from other sites to log in.",
     "why": "People often reuse passwords across services.",
@@ -94,7 +94,7 @@
     "id": "phishing_credentials",
     "name": "phishing for credentials",
     "aliases": ["phish password","fake login page","credential phishing"],
-    "scenarios": ["auth","practice_streaming","iot_cam","doc_link"],
+    "scenarios": ["auth","practice_streaming","iot","doc_link"],
     "severity": "high",
     "description": "Trick the user into entering their password or code on a fake site.",
     "children": [],
@@ -214,7 +214,7 @@
     "id": "join_home_wifi",
     "name": "join home wi-fi",
     "aliases": ["wifi password guessing","wps abuse","default wifi password"],
-    "scenarios": ["iot_cam"],
+    "scenarios": ["iot"],
     "severity": "high",
     "description": "Connect to the home network to reach the device locally.",
     "children": []
@@ -223,7 +223,7 @@
     "id": "access_local_interface_rtsp",
     "name": "access local interface/rtsp",
     "aliases": ["rtsp access","local web ui"],
-    "scenarios": ["iot_cam"],
+    "scenarios": ["iot"],
     "severity": "high",
     "description": "Use the camera’s local interface or RTSP stream on the LAN.",
     "children": []
@@ -232,7 +232,7 @@
     "id": "default_admin_password",
     "name": "default admin password",
     "aliases": ["default creds","factory password"],
-    "scenarios": ["iot_cam"],
+    "scenarios": ["iot"],
     "severity": "high",
     "description": "Device admin panel left on factory credentials.",
     "children": []
@@ -241,7 +241,7 @@
     "id": "default_stream_key",
     "name": "default stream key",
     "aliases": ["unchanged stream key"],
-    "scenarios": ["iot_cam"],
+    "scenarios": ["iot"],
     "severity": "medium",
     "description": "Streaming key not changed from default.",
     "children": []

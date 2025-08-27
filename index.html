@@ -79,7 +79,7 @@
         2) Online shop: receive goods without paying
       </label>
       <label style="display:block;margin:4px 0">
-        <input type="radio" name="scenario" value="iot_cam" />
+        <input type="radio" name="scenario" value="iot" />
         3) Smart camera: view live feed without permission
       </label>
       <label style="display:block;margin:4px 0">
@@ -107,6 +107,18 @@
     </div>
 
   </div>
+
+  <!-- Scenario Guide: collapsed pill (bottom-right) that expands into a rich help card -->
+<div id="scenario-help" class="help collapsed">
+  <button id="help-toggle" aria-expanded="false" title="Show scenario guide">Scenario ▸</button>
+  <div class="help-body" id="help-body">
+    <div class="help-title">Scenario Guide</div>
+    <div class="help-content" id="help-content">
+      <!-- filled by study.js after Start Session -->
+    </div>
+  </div>
+</div>
+
   <!-- end of #app -->
 
   <!-- Vendor scripts (CDN). For offline, vendor locally and update the src paths. -->

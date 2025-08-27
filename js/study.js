@@ -1,5 +1,5 @@
-// js/study.js — scenario from Start Session, brief after start, Baseline→Assist controls,
-// tree snapshots, JSONL log, and priming Suggest/Prune/Explain on assist.
+// js/study.js — scenario chosen at Start, brief-after-start, Baseline→Assist controls,
+// snapshots, JSONL log, panel priming, and bottom-right Scenario Guide (collapsible).
 
 (function () {
   /* ---------------- logger (JSONL in memory) ---------------- */
@@ -17,7 +17,6 @@
       ...data
     });
   }
-  // wrap KB.core.log if present
   if (!window.KB) window.KB = {};
   if (!KB.core) KB.core = {};
   const prevLog = KB.core.log;
@@ -32,13 +31,53 @@
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
   }
-  async function fetchScenarioBrief(scenario_id) {
+  async function fetchScenarioJson(scenario_id) {
     const path = `data/scenarios/${scenario_id}.json`;
-    try { const res = await fetch(path); const js = await res.json(); return (js.brief || '').trim(); }
-    catch { return 'Build an attack tree for the given objective.'; }
+    const res = await fetch(path);
+    return await res.json();
+  }
+  function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+  /* ---------------- Scenario Guide widget ---------------- */
+  function initScenarioHelpToggle() {
+    const wrap = document.getElementById('scenario-help');
+    const btn  = document.getElementById('help-toggle');
+    if (!wrap || !btn) return;
+    btn.onclick = () => {
+      wrap.classList.toggle('collapsed');
+      const open = !wrap.classList.contains('collapsed');
+      btn.textContent = open ? 'Scenario ▾' : 'Scenario ▸';
+      btn.setAttribute('aria-expanded', String(open));
+    };
+  }
+  function setScenarioGuideFromJson(js) {
+    const cont = document.getElementById('help-content');
+    if (!cont) return;
+
+    // Prefer explicit rich text if present
+    if (js.guideHtml) {
+      cont.innerHTML = js.guideHtml;
+      return;
+    }
+
+    // Fallback: build from brief + gold lists
+    const brief = escapeHtml(js.brief || 'Build an attack tree for the given objective.');
+    const must = Array.isArray(js.gold_must_have) ? js.gold_must_have : [];
+    const low  = Array.isArray(js.gold_low_value) ? js.gold_low_value : [];
+
+    const mustLis = must.map(x => `<li>${escapeHtml(x)}</li>`).join('');
+    const lowLis  = low.map(x  => `<li>${escapeHtml(x)}</li>`).join('');
+
+    cont.innerHTML = `
+      <p>${brief}</p>
+      <p><strong>Think in branches:</strong> use <em>OR</em> for alternative paths and <em>AND</em> when all steps are required.</p>
+      ${must.length ? `<p><strong>Common paths to consider:</strong></p><ul>${mustLis}</ul>` : ''}
+      ${low.length  ? `<p><strong>Often out of scope / low value:</strong></p><ul>${lowLis}</ul>` : ''}
+      <p class="small">Tip: keep leaves concrete (a single action). Use AND for steps like “reset password” <em>and</em> “access email”.</p>
+    `;
   }
 
-  /* ---------------- UI gates (assistant on/off) ---------------- */
+  /* ---------------- assistant on/off ---------------- */
   function setAssistantEnabled(on) {
     const kbPanel = document.getElementById('kb-panel');
     if (!kbPanel) return;
@@ -60,7 +99,7 @@
     if (modeSpan) modeSpan.textContent = `mode: ${on ? 'kb' : 'baseline'}`;
   }
 
-  /* ---------------- snapshots ---------------- */
+  /* ---------------- snapshots & priming ---------------- */
   function snapshotTree(suffix) {
     try {
       const s = window.__kbSession || {};
@@ -71,24 +110,13 @@
       return name;
     } catch (e) { console.error('[study] snapshot failed', e); alert('Snapshot failed; see console.'); return null; }
   }
-
-  /* ---------------- prime assistant panels ---------------- */
   function primeAssistantPanels() {
-    // choose a parent: current selection → first element → null
     let label = null;
     try {
-      const sel = window.paper?.findViewById?.(window.__selectedId || '')?.model;
-      if (sel) label = sel.attr('label/text') || null;
-    } catch {}
-    if (!label) {
       const el = (window.graph?.getElements?.() || [])[0];
       label = el ? (el.attr('label/text') || null) : null;
-    }
-
-    // Fire selection event so Suggest/Explain render for that node
+    } catch {}
     document.dispatchEvent(new CustomEvent('kb:selection', { detail: { parent: label } }));
-
-    // Also nudge prune to recompute (kb-ui listens to graph events; this is a safe no-op change)
     try { window.graph?.trigger('change:attrs'); } catch {}
     push('assist_prime', { parent: label });
   }
@@ -97,6 +125,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     const chip = document.getElementById('study-toolbar');
     chip?.classList.remove('hidden');
+    initScenarioHelpToggle();
 
     const scenSpan = document.getElementById('study-scenario');
     const btnStartAssist  = document.getElementById('btn-start-assist');
@@ -104,33 +133,29 @@
     const btnDownloadLog  = document.getElementById('btn-download-log');
     const btnEndSession   = document.getElementById('btn-end-session');
 
-    // Start in a neutral state until session is started
     window.__studyPhase = 'not_started';
     setAssistantEnabled(false);
 
-    // When Start Session completes, show the brief for the chosen scenario
+    // After Start Session: load chosen scenario, show brief, fill Scenario Guide
     document.addEventListener('kb:session_started', async (e) => {
       const s = e.detail || {};
       if (scenSpan) scenSpan.textContent = `scenario: ${s.scenario_id}`;
-      const brief = await fetchScenarioBrief(s.scenario_id);
+      let js;
+      try { js = await fetchScenarioJson(s.scenario_id); } catch { js = { brief: 'Build an attack tree for the given objective.' }; }
       const briefText = document.getElementById('brief-text');
-      if (briefText) briefText.textContent = brief;
+      if (briefText) briefText.textContent = (js.brief || 'Build an attack tree for the given objective.').trim();
       document.getElementById('brief-modal')?.classList.remove('hidden');
+      setScenarioGuideFromJson(js);
 
-      // set Baseline phase only now
       window.__studyPhase = 'baseline';
       push('phase', { phase: 'baseline_start', scenario_id: s.scenario_id });
     });
 
-    // Start baseline after reading brief
+    // Start baseline (close brief)
     const briefBtn = document.getElementById('btn-brief-start');
-    if (briefBtn) {
-      briefBtn.onclick = () => {
-        document.getElementById('brief-modal')?.classList.add('hidden');
-      };
-    }
+    if (briefBtn) briefBtn.onclick = () => document.getElementById('brief-modal')?.classList.add('hidden');
 
-    // Switch to ASSIST: snapshot v1, enable assistant, prime panels
+    // Switch to ASSIST: snapshot v1, enable assistant, prime
     if (btnStartAssist) {
       btnStartAssist.onclick = () => {
         const snap = snapshotTree('v1');

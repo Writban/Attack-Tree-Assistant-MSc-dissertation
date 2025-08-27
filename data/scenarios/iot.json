@@ -2,6 +2,7 @@
   "id": "iot",
   "name": "Smart Thermostat",
   "brief": "Local pairing + cloud control with firmware updates.",
+  "guideHtml": "<p><strong>Goal:</strong> View a smart camera's live feed. The camera streams via a phone app, stores clips in the cloud, and sits on home Wi-Fi.</p><p><strong>Common paths:</strong></p><ul><li><em>Cloud account access</em>: credential stuffing or phishing.</li><li><em>Local network path</em> <strong>(AND)</strong>: join home Wi-Fi (weak/default password or WPS) <em>and</em> access local interface/RTSP.</li><li><em>Default/weak setup</em>: default admin password or unchanged stream key.</li></ul><p><strong>Pitfalls:</strong> Stealing the camera or DoS doesn’t give viewing access; model steps that end with a working feed.</p>",
   "gold_must_have": ["Default Credentials","Firmware Update Interception"],
   "gold_low_value": ["TEMPEST Side-channel (out of scope)"],
   "quiz": [
