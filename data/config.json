@@ -21,5 +21,8 @@
   },
   "logging": { "enabled": true, "maxEntries": 5000 },
   "woz": { "enabled": false, "remoteUrl": "woz/feed.auth.json", "pollMs": 4000, "maxBackoffMs": 60000 },
-  "ui": { "debounceMs": 180 }
+  "ui": { "debounceMs": 180 },
+  "suggest": { "minScore": 0.35, "topK": 3, "moreK": 7 },
+  "prune":   { "flagThreshold": 0.45, "maxVisible": 3 }
+
 }
