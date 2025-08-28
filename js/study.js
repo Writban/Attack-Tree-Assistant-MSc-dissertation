@@ -62,6 +62,80 @@
     }, 0);
   }
 
+  // ---- Tree image export (PNG with participant id) ----
+async function downloadTreeImageForSession() {
+  const pid = (window.__kbSession?.participant_id || 'session').replace(/[^\w\-]+/g, '_');
+  await exportPaperPNG(`${pid}.png`);
+}
+
+function exportPaperPNG(filename) {
+  const paper = window.paper, graph = window.graph;
+  if (!paper || !graph) return console.warn('[export] paper/graph not ready');
+  const elements = graph.getElements?.() || [];
+  if (!elements.length) return console.warn('[export] no elements; skipping image');
+
+  // Compute content bbox (elements only) in graph coords
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const el of elements) {
+    const p = el.position ? el.position() : { x: el.get('position')?.x || 0, y: el.get('position')?.y || 0 };
+    const s = el.size ? el.size() : (el.get?.('size') || { width: 200, height: 44 });
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + s.width);
+    maxY = Math.max(maxY, p.y + s.height);
+  }
+  if (!isFinite(minX) || !isFinite(minY)) return console.warn('[export] invalid bbox; skipping');
+
+  const pad = 24;
+  const tr = (paper.translate && paper.translate()) || { tx: 0, ty: 0 };
+  const vbX = Math.floor(minX + (tr.tx || 0) - pad);
+  const vbY = Math.floor(minY + (tr.ty || 0) - pad);
+  const vbW = Math.ceil((maxX - minX) + 2 * pad);
+  const vbH = Math.ceil((maxY - minY) + 2 * pad);
+
+  // Clone current SVG and set a tight viewBox
+  const svgOrig = paper.el.querySelector('svg');
+  if (!svgOrig) return console.warn('[export] no svg element');
+  const svg = svgOrig.cloneNode(true);
+  svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+  svg.setAttribute('width', String(vbW));
+  svg.setAttribute('height', String(vbH));
+
+  const svgString = new XMLSerializer().serializeToString(svg);
+  const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(svgBlob);
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(vbW * scale));
+      canvas.height = Math.max(1, Math.round(vbH * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, vbW, vbH);
+      canvas.toBlob((pngBlob) => {
+        try {
+          if (pngBlob) Utils.saveFile(filename, pngBlob);
+          else Utils.saveFile(filename.replace(/\.png$/i, '.svg'), svgBlob); // fallback
+        } finally {
+          URL.revokeObjectURL(url);
+          resolve();
+        }
+      }, 'image/png', 1.0);
+    };
+    img.onerror = () => {
+      // Fallback: offer SVG if rasterization fails
+      Utils.saveFile(filename.replace(/\.png$/i, '.svg'), svgBlob);
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    img.src = url;
+  });
+}
+
+
   async function fetchScenarioJson(scenario_id) {
     // Sandbox mode: no fetch; return a virtual scenario object
     if (scenario_id === "sandbox") {
@@ -237,15 +311,20 @@
     }
 
     // Download log (JSONL)
-    if (btnDownloadLog) {
-      btnDownloadLog.onclick = () => {
-        const s = window.__kbSession || {};
-        const safeSid = (s.session_id || nowIso()).replace(/[:.]/g, "-");
-        const name = `log_${s.scenario_id || "scen"}_${safeSid}.jsonl`;
-        const lines = LOG.map((o) => JSON.stringify(o)).join("\n") + "\n";
-        saveFile(name, new Blob([lines], { type: "application/x-ndjson" }));
-      };
-    }
+    // Download log (JSONL) + PNG of current tree
+if (btnDownloadLog) {
+  btnDownloadLog.onclick = async () => {
+    const s = window.__kbSession || {};
+    const safeSid = (s.session_id || nowIso()).replace(/[:.]/g, "-");
+    const name = `log_${s.scenario_id || "scen"}_${safeSid}.jsonl`;
+    const lines = LOG.map((o) => JSON.stringify(o)).join("\n") + "\n";
+    saveFile(name, new Blob([lines], { type: "application/x-ndjson" }));
+
+    // also save an image of the current tree as PARTICIPANTID.png (or .svg fallback)
+    await downloadTreeImageForSession();
+  };
+}
+
 
     // End session: also log here
     // End session: final snapshot? download log? reset UI + show Start dialog again
