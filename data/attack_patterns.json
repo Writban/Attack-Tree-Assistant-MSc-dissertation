@@ -227,5 +227,117 @@
     "severity": "medium",
     "description": "Use pretexts to persuade someone with legitimate access to share the document link.",
     "children": []
-  }
+  },
+  {
+  "id": "no_mfa_or_weak_mfa",
+  "name": "no or weak MFA",
+  "aliases": ["mfa off", "sms only mfa", "no 2fa", "weak two-factor"],
+  "severity": "high",
+  "description": "Accounts can be accessed without strong multi-factor; attackers succeed with only a password or a weak factor.",
+  "children": []
+},
+{
+  "id": "default_credentials_generic",
+  "name": "default credentials",
+  "aliases": ["factory password", "unchanged default creds", "admin:admin"],
+  "severity": "high",
+  "description": "Systems or services still use factory default usernames/passwords.",
+  "children": []
+},
+{
+  "id": "idor_generic",
+  "name": "insecure direct object reference",
+  "aliases": ["IDOR", "broken object access", "object id tampering"],
+  "severity": "high",
+  "description": "Access or modify another user’s resource by guessing or changing identifiers without proper access control.",
+  "children": ["predictable_ids"]
+},
+{
+  "id": "predictable_ids",
+  "name": "predictable identifiers",
+  "aliases": ["sequential ids", "guessable ids", "incrementing ids"],
+  "severity": "medium",
+  "description": "Resource identifiers follow simple sequences or patterns that are easy to enumerate.",
+  "children": []
+},
+{
+  "id": "session_fixation",
+  "name": "session fixation",
+  "aliases": ["reuse session id", "predicted session id", "no new session after login"],
+  "severity": "medium",
+  "description": "Attacker sets or predicts a victim’s session token and reuses it after the victim authenticates.",
+  "children": []
+},
+{
+  "id": "weak_password_policy",
+  "name": "weak password policy",
+  "aliases": ["simple passwords allowed", "no complexity", "short max length"],
+  "severity": "medium",
+  "description": "Password rules allow easily guessable secrets (short length, common words, no reuse checks).",
+  "children": []
+},
+{
+  "id": "sql_injection_basic",
+  "name": "SQL injection (basic)",
+  "aliases": ["sql inj", "sqli", "unsanitized query"],
+  "severity": "high",
+  "description": "User input is embedded into SQL queries without proper parameterization, allowing data access/modification.",
+  "children": []
+},
+{
+  "id": "xss_reflected",
+  "name": "reflected XSS",
+  "aliases": ["xss", "html injection", "script injection"],
+  "severity": "medium",
+  "description": "Untrusted input is reflected in responses without encoding, enabling script execution in the victim’s browser.",
+  "children": []
+},
+{
+  "id": "public_bucket_exposure",
+  "name": "public cloud bucket exposure",
+  "aliases": ["open s3 bucket", "public blob container", "world-readable storage"],
+  "severity": "high",
+  "description": "A storage bucket/container is publicly readable or listable, exposing documents or data.",
+  "children": []
+},
+{
+  "id": "horizontal_privilege_escalation",
+  "name": "horizontal privilege escalation",
+  "aliases": ["access peer account", "same-level takeover"],
+  "severity": "high",
+  "description": "Move sideways to another user’s data at the same privilege level (often via IDOR or shared links).",
+  "children": []
+},
+{
+  "id": "vertical_privilege_escalation",
+  "name": "vertical privilege escalation",
+  "aliases": ["become admin", "gain higher role", "role escalation"],
+  "severity": "high",
+  "description": "Gain higher privileges than intended (e.g., user → admin) through misconfigurations or logic flaws.",
+  "children": []
+},
+{
+  "id": "pretext_call",
+  "name": "pretext phone/email request",
+  "aliases": ["pretext call", "support impersonation", "helpdesk social engineering"],
+  "severity": "medium",
+  "description": "Impersonate support or a colleague to request credentials, codes, or links.",
+  "children": []
+},
+{
+  "id": "abuse_export_download",
+  "name": "abuse export/download feature",
+  "aliases": ["bulk export abuse", "mass download endpoint"],
+  "severity": "medium",
+  "description": "Use a legitimate export or download feature to exfiltrate data at scale.",
+  "children": []
+},
+{
+  "id": "insecure_security_questions",
+  "name": "insecure security questions",
+  "aliases": ["weak secret questions", "guessable recovery answers"],
+  "severity": "medium",
+  "description": "Account recovery via static questions with answers that are guessable or publicly known.",
+  "children": []
+}
 ]

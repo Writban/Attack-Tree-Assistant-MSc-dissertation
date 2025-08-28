@@ -1,0 +1,26 @@
+{
+  "id": "generic",
+  "name": "Generic Web/App Case (Open-ended)",
+  "brief": "Model plausible ways an attacker could reach a sensitive goal in an average web/app system.",
+  "guideText": "Your task is to draft an attack tree from a high-level goal (e.g., access someone else’s data or make unauthorized purchases) down to concrete steps. Think in terms of credential acquisition (credential reuse, phishing), access control gaps (IDOR), misconfigurations (public storage), and common web vulns (XSS/SQLi). Use AND when steps must co-occur, OR for alternative routes.\n\nAssumptions:\n• The system is a typical web app with user accounts.\n• Some users reuse passwords across sites; some features expose predictable IDs/links.\n• There may be export/download endpoints and cloud storage in use.\n• No insider willingly hands over data.\n\nDraw a tree that someone new to security could follow in English.",
+  "coach_tips": [
+    "Credential acquisition routes (e.g., reuse, phishing, spraying) are alternatives—put them under OR.",
+    "IDOR often rides on predictable identifiers; pair them when appropriate.",
+    "Required pairs (e.g., trigger reset + access the reset email) belong under AND."
+  ],
+  "gold_must_have": [
+    "credential stuffing",
+    "insecure direct object reference",
+    "default credentials"
+  ],
+  "gold_low_value": [
+    "dos the site",
+    "brute force all possible urls",
+    "randomly guess the admin panel"
+  ],
+  "aliases": {
+    "credential reuse": "credential stuffing",
+    "object id tampering": "insecure direct object reference",
+    "factory password": "default credentials"
+  }
+}

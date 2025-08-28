@@ -40,16 +40,21 @@ const CATS = {
 };
 
 
-  // Common fallbacks
   const COMMON_IDS = [
-    'credential_stuffing','phishing_credentials','password_spraying',
-    'password_reset_flow','intercept_reset_email',
-    'use_stolen_account_saved_card','use_leaked_card_details',
-    'stack_discounts_referrals','item_not_received_refund',
-    'join_home_wifi','access_local_interface_rtsp','default_admin_password',
-    'default_stream_key','predictable_link_enumeration','find_exposed_links_public',
-    'use_shared_device_history','phishing_for_link'
-  ];
+  'credential_stuffing','phishing_credentials','password_spraying',
+  'password_reset_flow','intercept_reset_email',
+  'use_stolen_account_saved_card','use_leaked_card_details',
+  'stack_discounts_referrals','item_not_received_refund',
+  'join_home_wifi','access_local_interface_rtsp','default_admin_password',
+  'default_stream_key','predictable_link_enumeration','find_exposed_links_public',
+  'use_shared_device_history','phishing_for_link',
+  // Generic fallbacks for Sandbox/random cases
+  'no_mfa_or_weak_mfa','default_credentials_generic','idor_generic','predictable_ids',
+  'session_fixation','weak_password_policy','sql_injection_basic','xss_reflected',
+  'public_bucket_exposure','horizontal_privilege_escalation','vertical_privilege_escalation',
+  'pretext_call','abuse_export_download','insecure_security_questions'
+];
+
 
   // AND-pair synergy (esp. Case 1)
   const AND_PAIRS = [
