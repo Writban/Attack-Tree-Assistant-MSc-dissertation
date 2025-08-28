@@ -1,5 +1,6 @@
-// js/app.js — ports drag-to-link, single small arrowhead at TARGET, center/boundary anchoring,
-// pan on blank, add/rename/delete/clear/save/load. No tool overlays or SHIFT hacks.
+// js/app.js — ports drag-to-link, one small arrowhead at TARGET, center/boundary anchoring,
+// pan on blank, add/rename/delete/clear/save/load, session start dialog.
+// RQ1/RQ2 instrumentation: logs manual actions (create/link/rename/delete).
 
 document.addEventListener('DOMContentLoaded', () => {
   init().catch(err => { console.error('[FATAL]', err); showFatal(err); });
@@ -10,14 +11,12 @@ const Session = {
   set(s) { window.__kbSession = s; },
 };
 
-
 async function init() {
   await ensureLibs();
   await safeLoadConfigAndKB();
   const { graph, paper } = makeCanvas();
   wireUI(graph, paper);
   ensureSessionStart();
-
 }
 
 /* -------------------- lib loader -------------------- */
@@ -45,14 +44,7 @@ async function safeLoadConfigAndKB() {
 
 /* -------------------- visuals -------------------- */
 const LINK_COLOR = '#9aa0a6';
-
-// Use an explicit marker PATH (more robust than "classic" across builds)
-const TARGET_MARKER = {
-  type: 'path',
-  d: 'M 10 -5 L 0 0 L 10 5 z', // small triangle
-  stroke: LINK_COLOR,
-  fill: LINK_COLOR
-};
+const TARGET_MARKER = { type: 'path', d: 'M 10 -5 L 0 0 L 10 5 z', stroke: LINK_COLOR, fill: LINK_COLOR };
 
 /* -------------------- canvas -------------------- */
 function makeCanvas() {
@@ -70,36 +62,24 @@ function makeCanvas() {
     width, height,
     gridSize: 15,
     drawGrid: true,
-    interactive: { linkMove: false }, // keep links stable once connected
+    interactive: { linkMove: false },
     cellViewNamespace: ns,
-
-    // Default link with ONE arrowhead at the target
     defaultLink: new joint.shapes.standard.Link({
-      attrs: {
-        line: {
-          stroke: LINK_COLOR,
-          strokeWidth: 2,
-          targetMarker: TARGET_MARKER,      // <— arrow at target only
-          sourceMarker: { type: 'none' }    // <— none at source
-        }
-      },
-      router: { name: 'normal' },           // straight unless user bends it
+      attrs: { line: { stroke: LINK_COLOR, strokeWidth: 2, targetMarker: TARGET_MARKER, sourceMarker: { type: 'none' } } },
+      router: { name: 'normal' },
       connector: { name: 'straight' }
     }),
-
-    linkPinning: false,                     // must finish on a magnet
+    linkPinning: false,
     snapLinks: { radius: 30 },
     validateMagnet: (cv, magnet) => magnet && magnet.getAttribute('magnet') !== 'passive',
     validateConnection: (sv, sm, tv, tm) => sv && tv && sv !== tv && !!sm && !!tm
   });
 
-  // keep paper sized to container
   window.addEventListener('resize', () => {
     const r = pc.getBoundingClientRect();
     paper.setDimensions(r.width || width, r.height || height);
   });
 
-  // expose for other modules
   window.graph = graph; window.paper = paper; window.joint = joint;
   document.dispatchEvent(new CustomEvent('kb:canvas:ready', { detail: { graph, paper } }));
   return { graph, paper };
@@ -112,7 +92,10 @@ function wireUI(graph, paper) {
   const RectClass   = joint.shapes?.standard?.Rectangle || joint.shapes?.basic?.Rect;
   const CircleClass = joint.shapes?.standard?.Circle    || joint.shapes?.basic?.Circle;
 
-  // ---- Ports on all 4 sides (drag from any edge) ----
+  // Simple logger passthrough for RQ1/RQ2
+  const log = (ev, data) => { try { KB?.core?.log?.(ev, data || {}); } catch {} };
+
+  // ---- Ports on all 4 sides ----
   const PORT_GROUPS = {
     left:   { position: { name: 'left'   }, attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
     right:  { position: { name: 'right'  }, attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
@@ -129,12 +112,13 @@ function wireUI(graph, paper) {
     const rect = new RectClass();
     rect.resize(200, 44);
     rect.attr({
-      body:  { fill: '#1f2937', stroke: '#6b7280', strokeWidth: 2, magnet: 'passive' }, // body is NOT a magnet
+      body:  { fill: '#1f2937', stroke: '#6b7280', strokeWidth: 2, magnet: 'passive' },
       label: { text: label, fill: '#fff' }
     });
     rect.position(x, y);
     addPorts(rect);
     rect.addTo(graph);
+    log('node_created', { id: rect.id, label });
     return rect;
   }
   function createGate(kind, x = 180, y = 160) {
@@ -149,6 +133,7 @@ function wireUI(graph, paper) {
     gate.position(x, y);
     addPorts(gate);
     gate.addTo(graph);
+    log('gate_created', { id: gate.id, kind });
     return gate;
   }
 
@@ -191,12 +176,13 @@ function wireUI(graph, paper) {
     const nv = prompt('New name:', old);
     if (nv && nv.trim()) {
       selectedElement.attr('label/text', nv.trim());
+      log('node_renamed', { id: selectedElement.id, from: old, to: nv.trim() });
       try { KB.ui.refreshSelection({ model: selectedElement }); } catch {}
       updateSelLabel();
     }
   });
 
-  // ----- when a link is created: center anchors + boundary connection point + enforce 1 arrowhead -----
+  // ----- link created: center anchors, boundary connection, single arrow at TARGET -----
   paper.on('link:connect', (linkView) => {
     const m = linkView.model;
     const srcEl = m.getSourceElement();
@@ -205,16 +191,20 @@ function wireUI(graph, paper) {
     if (srcEl) m.set('source', { id: srcEl.id, anchor: { name: 'center' }, connectionPoint: { name: 'boundary' } });
     if (tgtEl) m.set('target', { id: tgtEl.id, anchor: { name: 'center' }, connectionPoint: { name: 'boundary' } });
 
-    // Ensure exactly one small arrow at TARGET
     m.attr('line/targetMarker', TARGET_MARKER);
     m.attr('line/sourceMarker', { type: 'none' });
 
     if (typeof m.removeVertices === 'function') m.removeVertices();
     if (typeof linkView.update === 'function') linkView.update();
     if (typeof m.toFront === 'function') m.toFront();
+
+    // RQ1/RQ2: log link creation (for parsimony/structure diffs)
+    const sLabel = srcEl?.attr?.('label/text') || (srcEl?.get?.('gate') ? `${srcEl.get('gate')} gate` : 'node');
+    const tLabel = tgtEl?.attr?.('label/text') || (tgtEl?.get?.('gate') ? `${tgtEl.get('gate')} gate` : 'node');
+    log('link_created', { source: sLabel, target: tLabel });
   });
 
-  // link select
+  // select link
   paper.on('link:pointerdown', (view) => { selectedLink = view.model; selectedElement = null; updateSelLabel(); });
 
   // ----- pan on blank drag -----
@@ -266,6 +256,7 @@ function wireUI(graph, paper) {
     const nv = prompt('New name:', old);
     if (nv && nv.trim()) {
       selectedElement.attr('label/text', nv.trim());
+      log('node_renamed', { id: selectedElement.id, from: old, to: nv.trim() });
       try { KB.ui.refreshSelection({ model: selectedElement }); } catch {}
       updateSelLabel();
     }
@@ -273,12 +264,15 @@ function wireUI(graph, paper) {
 
   btnDel.addEventListener('click', () => {
     if (selectedElement) {
+      const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
       const links = graph.getConnectedLinks(selectedElement);
       links.forEach(l => l.remove());
       selectedElement.remove();
+      log('node_deleted', { label });
       selectedElement = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
     } else if (selectedLink) {
-      selectedLink.remove(); selectedLink = null; updateSelLabel();
+      selectedLink.remove(); log('link_deleted', {});
+      selectedLink = null; updateSelLabel();
     } else {
       alert('Select a node or link to delete.');
     }
@@ -304,7 +298,6 @@ function wireUI(graph, paper) {
     selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
   });
 
-
   function pickFile() {
     return new Promise(resolve => {
       const inp = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json' });
@@ -322,7 +315,6 @@ function showFatal(err) {
   div.innerHTML = `<div class="title">Startup error</div>
     <div class="small">${String(err && err.message || err)}</div>`;
   pane.innerHTML = ''; pane.appendChild(div);
-  
 }
 
 function ensureSessionStart() {
@@ -331,30 +323,20 @@ function ensureSessionStart() {
   const sess = document.getElementById('sess-id');
   const startBtn = document.getElementById('btn-start-session');
 
-  // prefill session id
   if (sess) sess.value = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
 
   const start = () => {
-    // read selected scenario from radio group
     const chosen = document.querySelector('input[name="scenario"]:checked');
     const scenario_id = (chosen && chosen.value) || 'auth';
-
     const participant_id = (part.value || '').trim() || 'Px';
     const session_id = (sess.value || '').trim() || new Date().toISOString().replace(/[:.]/g,'-');
 
-    // persist on window (read by study.js)
     window.__kbSession = { participant_id, session_id, scenario_id };
-
     try { KB.core.log('session_started', { participant_id, session_id, scenario_id }); } catch {}
     modal.classList.add('hidden');
-
-    // Tell the study controller we have a scenario now
     document.dispatchEvent(new CustomEvent('kb:session_started', { detail: { participant_id, session_id, scenario_id } }));
   };
 
   if (startBtn) startBtn.onclick = start;
-
-  // show if not already set
   if (!window.__kbSession) modal.classList.remove('hidden');
 }
-

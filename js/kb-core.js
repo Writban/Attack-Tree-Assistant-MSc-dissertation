@@ -1,5 +1,8 @@
-// js/kb-core.js — KB loader + normalization/aliases + Suggest/Prune/Explain engines
-// with scenario gold boosting and AND-pair synergy (esp. for Case 1). Prune protects golds.
+// js/kb-core.js — Suggest/Prune/Explain with:
+// - stop-word aware normalization
+// - alias + fuzzy matching (edit distance + token overlap)
+// - structural prune flags: orphan nodes, dangling/unary gates
+// - keeps prior gold boosts, AND-pair synergy, gold-protected prune, resolve(), log()
 
 (function () {
   if (!window.KB) window.KB = {};
@@ -9,14 +12,35 @@
   /* ---------------- state ---------------- */
   let CONFIG = {
     suggest: { minScore: 0.35, topK: 3, moreK: 7 },
-    prune:   { flagThreshold: 0.45, maxVisible: 3 }
+    prune:   { flagThreshold: 0.45, maxVisible: 3 },
+    fuzzy:   { enabled: true, maxDistance: 2, tokenOverlapMin: 0.6 }
   };
   let KB_RAW = [];
   const BY_ID = new Map();
-  const CANON = new Map();
-  const ALIAS = new Map();
+  const CANON = new Map(); // normalized canonical name -> id
+  const ALIAS = new Map(); // normalized alias -> id
 
-  // Common patterns that generalize across scenarios (fallbacks)
+  const STOP = new Set(['the','a','an','of','for','to','and','or','via','with','on','in','by','from','into','using']);
+
+  // Minimal categories for AND-misuse detection
+const CATS = {
+  // credential acquisition alternatives
+  'CS': 'credential_acquisition',
+  'password_spraying': 'credential_acquisition',
+  'phishing_credentials': 'credential_acquisition',
+  // recovery flow
+  'password_reset_flow': 'recovery_flow',
+  'intercept_reset_email': 'recovery_flow',
+  // iot local access
+  'join_home_wifi': 'local_access',
+  'access_local_interface_rtsp': 'local_access',
+  // checkout payment routes
+  'use_leaked_card_details': 'payment_fraud',
+  'use_stolen_account_saved_card': 'payment_fraud'
+};
+
+
+  // Common fallbacks
   const COMMON_IDS = [
     'credential_stuffing','phishing_credentials','password_spraying',
     'password_reset_flow','intercept_reset_email',
@@ -28,20 +52,23 @@
   ];
 
   // AND-pair synergy (esp. Case 1)
-  // If one exists, strongly suggest the other with an AND rationale.
   const AND_PAIRS = [
     { a: 'password_reset_flow', b: 'intercept_reset_email',
       text: 'Password reset typically requires BOTH requesting a reset AND accessing the reset email.' }
   ];
 
   /* ---------------- utils ---------------- */
-  const sev = s => ({ high: 0.7, medium: 0.5, low: 0.3 }[String(s||'').toLowerCase()] ?? 0.4);
-  const norm = s => String(s || '')
-    .toLowerCase()
-    .replace(/[_\-]+/g, ' ')
-    .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  function sev(s){ return ({high:0.7,medium:0.5,low:0.3}[String(s||'').toLowerCase()] ?? 0.4); }
+
+  function tokensOf(s) {
+    return String(s||'')
+      .toLowerCase()
+      .replace(/[_\-]+/g,' ')
+      .replace(/[^a-z0-9 ]+/g,' ')
+      .split(/\s+/)
+      .filter(t => t && !STOP.has(t));
+  }
+  function norm(s){ return tokensOf(s).join(' '); }
 
   function addName(entry, name) {
     const k = norm(name);
@@ -51,27 +78,70 @@
     const k = norm(alias);
     if (k && !ALIAS.has(k)) ALIAS.set(k, entry.id);
   }
+
+  function editDistance(a,b) { // classic Levenshtein
+    const m=a.length, n=b.length;
+    if (!m) return n; if (!n) return m;
+    const dp=new Array(n+1); for(let j=0;j<=n;j++) dp[j]=j;
+    for(let i=1;i<=m;i++){
+      let prev=dp[0]; dp[0]=i;
+      for(let j=1;j<=n;j++){
+        const tmp=dp[j];
+        dp[j]= (a[i-1]===b[j-1]) ? prev : Math.min(prev+1, dp[j-1]+1, dp[j]+1);
+        prev=tmp;
+      }
+    }
+    return dp[n];
+  }
+
+  function tokenOverlap(aTokens, bTokens) {
+    const A = new Set(aTokens), B = new Set(bTokens);
+    let inter = 0;
+    for (const t of A) if (B.has(t)) inter++;
+    const denom = Math.max(1, A.size, B.size);
+    return inter / denom;
+  }
+
+  // exact -> alias/canon; else fuzzy by tokens & distance
   function canonIdFor(label) {
     const k = norm(label);
-    return ALIAS.get(k) || CANON.get(k) || null;
+    if (!k) return null;
+    let id = ALIAS.get(k) || CANON.get(k);
+    if (id) return id;
+
+    if (!(CONFIG.fuzzy?.enabled)) return null;
+
+    const aTok = k.split(' ');
+    let best = { id:null, score:-1 };
+
+    // search aliases first (more likely matches), then canonicals
+    const tryMap = (map) => {
+      for (const [key, valId] of map.entries()) {
+        const bTok = key.split(' ');
+        const over = tokenOverlap(aTok, bTok);
+        if (over < (CONFIG.fuzzy.tokenOverlapMin ?? 0.6)) continue;
+        const dist = editDistance(k, key);
+        if (dist > (CONFIG.fuzzy.maxDistance ?? 2)) continue;
+        const score = over - (dist * 0.05);
+        if (score > best.score) best = { id: valId, score };
+      }
+    };
+    tryMap(ALIAS); tryMap(CANON);
+    return best.id;
   }
+
   function inScenario(entry, scenarioId) {
     if (!scenarioId || scenarioId === 'sandbox') return true;
     const list = entry.scenarios || [];
     return list.includes(scenarioId);
   }
 
-  function currentScenarioJson() {
-    try { return window.__scenarioJson || null; } catch { return null; }
-  }
+  function currentScenarioJson(){ try { return window.__scenarioJson || null; } catch { return null; } }
   function goldIdSet() {
     const js = currentScenarioJson();
     const arr = Array.isArray(js?.gold_must_have) ? js.gold_must_have : [];
     const set = new Set();
-    for (const name of arr) {
-      const id = canonIdFor(name);
-      if (id) set.add(id);
-    }
+    for (const name of arr) { const id = canonIdFor(name); if (id) set.add(id); }
     return set;
   }
 
@@ -136,17 +206,11 @@
         let reason = `Typical child of “${parentLabel}”.`;
         let badge = null;
 
-        // Gold boost
         if (golds.has(e.id)) { score += 0.25; badge = 'must-have'; reason = 'Must-have path for this scenario.'; }
 
-        // AND-pair synergy
         for (const pair of AND_PAIRS) {
           const other = (e.id === pair.a) ? pair.b : (e.id === pair.b ? pair.a : null);
-          if (other && existingIds.has(other)) {
-            score += 0.20;
-            reason = pair.text;
-            break;
-          }
+          if (other && existingIds.has(other)) { score += 0.20; reason = pair.text; break; }
         }
 
         fromParent.push({ id: e.id, name: e.name || e.id, source: 'parent', reason, score, badge });
@@ -161,7 +225,6 @@
         let reason = `Relevant to the chosen scenario.`;
         let badge = null;
         if (golds.has(e.id)) { score += 0.25; reason = 'Must-have path for this scenario.'; badge = 'must-have'; }
-        // Pair synergy with existing graph
         for (const pair of AND_PAIRS) {
           const other = (e.id === pair.a) ? pair.b : (e.id === pair.b ? pair.a : null);
           if (other && existingIds.has(other)) { score += 0.20; reason = pair.text; break; }
@@ -202,6 +265,24 @@
     return { top, more, parentId, parentLabel };
   };
 
+  /* ---------------- helpers: graph topology ---------------- */
+  function gateChildren(graph, el) {
+    try {
+      const links = graph.getConnectedLinks(el, { outbound: true });
+      const kids = [];
+      for (const l of links) {
+        const tgtId = l.get('target')?.id;
+        if (!tgtId) continue;
+        const t = graph.getCell(tgtId);
+        if (t?.isElement?.()) kids.push(t);
+      }
+      return kids;
+    } catch { return []; }
+  }
+  function degree(graph, el) {
+    try { return graph.getConnectedLinks(el).length; } catch { return 0; }
+  }
+
   /* ---------------- Prune engine ---------------- */
   Core.prune = function prune({ graph, scenarioId, maxVisible = CONFIG.prune.maxVisible }) {
     const elems = graph?.getElements?.() || [];
@@ -209,19 +290,71 @@
     const flags = [];
     const golds = goldIdSet();
 
+    // Structural: orphans, gates with <2 children, gate with 0 children
     for (const el of elems) {
       const label = el.attr?.('label/text') || '';
+      const isGate = !!el.get?.('gate');
+      const deg = degree(graph, el);
+
+      if (isGate) {
+        const kids = gateChildren(graph, el);
+        if (kids.length === 0) {
+          flags.push({ elementId: el.id, label: label || `${el.get('gate')} gate`,
+            reason: 'Gate has no children — incomplete structure.', score: 0.10 });
+          continue;
+        }
+        if (kids.length === 1) {
+          flags.push({ elementId: el.id, label: label || `${el.get('gate')} gate`,
+            reason: 'Gate has only one child — consider removing the gate or adding another child.', score: 0.20 });
+        }
+        continue; // skip further value checks for gates
+      }
+
+      if (el.get('gate') === 'AND' && kids.length >= 2) {
+  // Look up categories of children
+  const childCats = kids.map(k => {
+    const lbl = k.attr?.('label/text') || '';
+    const id = canonIdFor(lbl);
+    return id ? CATS[id] : null;
+  }).filter(Boolean);
+
+  // If two or more children share the same category that's normally alternative, warn once.
+  const altCats = new Set(['credential_acquisition','payment_fraud']);
+  const counts = {};
+  for (const c of childCats) counts[c] = (counts[c] || 0) + 1;
+
+  for (const [cat, n] of Object.entries(counts)) {
+    if (altCats.has(cat) && n >= 2) {
+      flags.push({
+        elementId: el.id,
+        label: `${el.get('gate')} gate`,
+        reason: 'This AND groups alternative tactics that usually stand as OR siblings (e.g., multiple ways to get credentials).',
+        score: 0.25
+      });
+      break; // one flag is enough
+    }
+  }
+}
+
+
+      if (deg === 0) {
+        flags.push({ elementId: el.id, label: label || 'node',
+          reason: 'Unlinked node — attach to a parent/child or remove.', score: 0.30 });
+      }
+    }
+
+    // Content-level flags (duplicates, vague/low value), protecting golds
+    for (const el of elems) {
+      if (el.get?.('gate')) continue; // handled above
+      const label = el.attr?.('label/text') || '';
       if (!label) continue;
-      if (el.get?.('gate')) continue; // ignore AND/OR gates
 
       const id = canonIdFor(label);
       const entry = id ? BY_ID.get(id) : null;
       const canonKey = norm(entry?.name || label);
 
-      // Protect scenario golds from pruning
-      if (id && golds.has(id)) continue;
+      if (id && golds.has(id)) continue; // protect scenario golds
 
-      // duplicates
       if (seenName.has(canonKey)) {
         flags.push({
           elementId: el.id,
@@ -233,10 +366,11 @@
       }
       seenName.set(canonKey, el.id);
 
-      // keep score
       let keep = entry ? sev(entry.severity) : 0.4;
       if (entry) keep += inScenario(entry, scenarioId) ? 0.15 : -0.15;
-      if (/^(step|task|misc|other|todo)$/i.test(label.trim())) keep -= 0.25;
+
+      if (/^(step|task|misc|other|todo|thing|stuff)$/i.test(label.trim())) keep -= 0.25;
+      if (label.trim().length <= 3) keep -= 0.25; // very short/ambiguous
 
       if (keep < (CONFIG.prune.flagThreshold ?? 0.45)) {
         flags.push({
@@ -253,7 +387,7 @@
     return flags.sort((a,b) => a.score - b.score).slice(0, maxVisible);
   };
 
-  /* ---------------- Explain engine ---------------- */
+  /* ---------------- Explain & resolve ---------------- */
   Core.explain = function explain(label) {
     const id = canonIdFor(label);
     if (!id) {
@@ -267,15 +401,29 @@
     const e = BY_ID.get(id) || {};
     const title = e.name || label;
     const severity = e.severity || 'unknown';
-    const summary =
-      e.description || e.comms ||
-      'This item appears in the KB but lacks a narrative.';
+    const summary = e.description || e.comms || 'This item appears in the KB but lacks a narrative.';
     const why = e.why || '';
     return { title, severity, summary, why };
   };
 
-  /* ---------------- Logging passthrough ---------------- */
-  Core.log = function(ev, data) {
-    console.log('[kb]', ev, data || {});
+  Core.resolve = function resolve(label) {
+    const id = canonIdFor(label);
+    return { id, entry: id ? (BY_ID.get(id) || null) : null };
   };
+
+  Core.addScenarioAliases = function(aliasMap) {
+  if (!aliasMap) return;
+  for (const [alias, canonical] of Object.entries(aliasMap)) {
+    const id = (function () {
+      const k = String(canonical || '').toLowerCase().replace(/[_\-]+/g,' ').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+      return (ALIAS.get(k) || CANON.get(k) || null);
+    })();
+    if (!id) continue;
+    const k = String(alias || '').toLowerCase().replace(/[_\-]+/g,' ').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+    if (k && !ALIAS.has(k)) ALIAS.set(k, id);
+  }
+};
+
+  /* ---------------- Logging passthrough ---------------- */
+  Core.log = function(ev, data) { console.log('[kb]', ev, data || {}); };
 })();

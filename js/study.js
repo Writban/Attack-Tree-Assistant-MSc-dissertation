@@ -189,6 +189,11 @@
 
       window.__scenarioJson = js;
 
+      if (js && js.aliases) {
+  try { KB.core.addScenarioAliases(js.aliases); KB.core.log('aliases_loaded', { count: Object.keys(js.aliases).length }); } catch(e) { console.warn(e); }
+}
+
+
       // Enter baseline phase
       window.__studyPhase = "baseline";
       push("phase", { phase: "baseline_start", scenario_id: s.scenario_id });

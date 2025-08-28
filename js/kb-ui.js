@@ -1,4 +1,7 @@
-// js/kb-ui.js — Suggest / Review (Prune) / Explain tabs with logging, gold badges, gate explain.
+// js/kb-ui.js — Suggest / Review (Prune) / Explain with RQ1+RQ2 instrumentation:
+// - Logs exposure of "Show more" suggestions (RQ1 Coverage@7/MRR)
+// - Cooldown: items the participant KEPT are not re-flagged again (RQ2 precision)
+// - Gate explanations preserved
 
 (function () {
   if (!window.KB) window.KB = {};
@@ -7,6 +10,9 @@
 
   let G = null, P = null;
   let CURRENT_PARENT = null;
+
+  // RQ2 cooldown for prune flags the user kept
+  const KEPT = new Set(); // stores lowercased labels the user marked "Keep"
 
   UI.mount = function mount(graph, paper) {
     G = graph; P = paper;
@@ -31,7 +37,7 @@
       renderExplain();
     });
 
-    // initial
+    // initial paint
     renderSuggest(false); renderPrune(false); renderExplain();
     // recalc prune on graph changes
     G.on('change add remove', _.throttle(() => renderPrune(true), 300));
@@ -64,7 +70,7 @@
     const list = document.createElement('div'); list.className = 'list';
     top.forEach((sug, i) => {
       list.appendChild(suggestionRow(sug, i+1));
-      if (emitLog) try { KB.core.log('suggest_shown', { id: sug.id, name: sug.name, parent: parentLabel || null, rank: i+1, score: Number(sug.score.toFixed?.(3) || sug.score), badge: sug.badge || null }); } catch {}
+      if (emitLog) try { KB.core.log('suggest_shown', { id: sug.id, name: sug.name, parent: parentLabel || null, rank: i+1, score: Number(sug.score?.toFixed?.(3) || sug.score), badge: sug.badge || null }); } catch {}
     });
     box.appendChild(list);
 
@@ -76,6 +82,19 @@
       const moreList = document.createElement('div');
       more.forEach((sug, i) => moreList.appendChild(suggestionRow(sug, top.length + i + 1)));
       moreWrap.appendChild(moreList);
+
+      // RQ1: when the user expands "Show more", log exposure for Coverage@7/MRR
+      moreWrap.addEventListener('toggle', () => {
+        if (moreWrap.open) {
+          more.forEach((sug, i) => {
+            try { KB.core.log('suggest_shown', {
+              id: sug.id, name: sug.name, parent: parentLabel || null,
+              rank: top.length + i + 1, score: Number(sug.score?.toFixed?.(3) || sug.score), badge: sug.badge || null
+            }); } catch {}
+          });
+        }
+      });
+
       box.appendChild(moreWrap);
     }
   }
@@ -135,18 +154,21 @@
     const scen = scenarioId();
     const flags = KB.core.prune({ graph: G, scenarioId: scen });
 
+    // RQ2 cooldown: suppress items the participant already kept
+    const filtered = flags.filter(f => !KEPT.has((f.label || '').toLowerCase()));
+
     const hdr = document.createElement('div'); hdr.className = 'card';
     hdr.innerHTML = `<div class="title">Review (prune candidates)</div>`;
     box.appendChild(hdr);
 
-    if (!flags.length) {
+    if (!filtered.length) {
       const empty = document.createElement('div'); empty.className = 'small';
       empty.textContent = 'No pruning suggestions right now.';
       hdr.appendChild(empty);
       return;
     }
 
-    flags.forEach(flag => {
+    filtered.forEach(flag => {
       if (emitLog) try { KB.core.log('prune_flag_shown', { label: flag.label, reason: flag.reason, score: Number(flag.score?.toFixed?.(3) || flag.score) }); } catch {}
       const row = document.createElement('div'); row.className = 'row';
       const left = document.createElement('div'); left.style.flex = '1';
@@ -155,7 +177,11 @@
       left.appendChild(title); left.appendChild(why);
 
       const keep = document.createElement('button'); keep.textContent = 'Keep';
-      keep.onclick = () => { try { KB.core.log('prune_keep', { label: flag.label }); } catch {}; renderPrune(false); };
+      keep.onclick = () => {
+        KEPT.add((flag.label || '').toLowerCase()); // cooldown
+        try { KB.core.log('prune_keep', { label: flag.label }); } catch {}
+        renderPrune(false);
+      };
 
       const del = document.createElement('button'); del.textContent = 'Remove'; del.style.marginLeft = '6px';
       del.onclick = () => {
@@ -183,7 +209,6 @@
     header.innerHTML = `<div class="title">Explain</div>`;
     box.appendChild(header);
 
-    // figure out current selection by scanning paper for selected element from app.js (we receive just label)
     const label = CURRENT_PARENT;
     if (!label) {
       const small = document.createElement('div'); small.className = 'small';
@@ -192,16 +217,14 @@
       return;
     }
 
-    // Try to find the element to check if it's a gate
-    let gateKind = null;
-    try {
-      const el = (G.getElements?.() || []).find(n => (n.attr?.('label/text')||'') === label || n.id === label);
-      if (el && el.get?.('gate')) gateKind = el.get('gate');
-    } catch {}
+    // Gate? show semantics + children
+    let gateKind = null, selectedEl = null;
+    try { selectedEl = (G.getElements?.() || []).find(n => (n.attr?.('label/text')||'') === label || n.id === label); } catch {}
+    if (selectedEl && selectedEl.get?.('gate')) gateKind = selectedEl.get('gate');
 
     if (gateKind) {
       const card = document.createElement('div'); card.className = 'card';
-      const kids = (G.getNeighbors?.( (G.getElements?.() || []).find(n => (n.attr?.('label/text')||'') === label) ) || [])
+      const kids = (G.getNeighbors?.(selectedEl) || [])
         .filter(c => c.isElement?.())
         .map(c => c.attr?.('label/text') || 'node')
         .slice(0, 6);
@@ -219,6 +242,7 @@
       return;
     }
 
+    // Leaf explanation
     const info = KB.core.explain(label);
     const card = document.createElement('div'); card.className = 'card';
     card.innerHTML = `

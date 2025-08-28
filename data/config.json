@@ -23,6 +23,6 @@
   "woz": { "enabled": false, "remoteUrl": "woz/feed.auth.json", "pollMs": 4000, "maxBackoffMs": 60000 },
   "ui": { "debounceMs": 180 },
   "suggest": { "minScore": 0.35, "topK": 3, "moreK": 7 },
-  "prune":   { "flagThreshold": 0.45, "maxVisible": 3 }
-
+  "prune":   { "flagThreshold": 0.45, "maxVisible": 3 },
+  "fuzzy":   { "enabled": true, "maxDistance": 2, "tokenOverlapMin": 0.6 }
 }

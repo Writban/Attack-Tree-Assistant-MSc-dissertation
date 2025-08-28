@@ -1,295 +1,231 @@
 [
   {
-    "id": "PRT",
-    "name": "Predictable Password Reset Token",
-    "aliases": ["reset token guess", "weak PRNG token"],
-    "keywords": ["token", "reset", "forgot password", "predictable", "prng"],
-    "contexts": ["web","api","auth"],
-    "children": ["Token reuse across channels","Long-lived token"],
-    "lay_explain": "The reset link uses a guessable code, so attackers can take over accounts.",
-    "why_it_matters": "Compromises any user with an outstanding reset.",
-    "mitigations": ["High-entropy tokens","Short expiry","One-time use","Rate limiting"],
-    "likelihood": 0.6, "impact": 0.9, "cost_hint": 0.3,
-    "preferred_parents": ["Password Reset","Account Recovery"]
-  },
-  {
-    "id": "CS",
-    "name": "Credential Stuffing",
-    "aliases": ["password reuse attack"],
-    "keywords": ["reuse","breach","stuffing"],
-    "contexts": ["web","auth"],
-    "children": ["No rate limiting on login","No MFA"],
-    "lay_explain": "Attackers try leaked email/password pairs from other sites to log in.",
-    "why_it_matters": "Many users reuse passwords; easy large-scale compromise.",
-    "mitigations": ["Rate limiting","IP risk scoring","MFA","Password reset prompts"],
-    "likelihood": 0.8, "impact": 0.7, "cost_hint": 0.2
-  },
-  {
-    "id": "NRL",
-    "name": "No Rate Limiting on Reset",
-    "aliases": ["no throttle reset"],
-    "keywords": ["rate limit","reset","brute force"],
-    "contexts": ["web","auth"],
-    "lay_explain": "Reset flows allow unlimited attempts so tokens and emails can be brute forced.",
-    "why_it_matters": "Enables guessing and automation at scale.",
-    "mitigations": ["Rate limits","Captcha","Anomaly detection"],
-    "likelihood": 0.7, "impact": 0.6, "cost_hint": 0.1
-  },
-  {
-    "id": "NPQ",
-    "name": "Negative Pricing / Quantity Logic Abuse",
-    "aliases": ["price manipulation", "cart math bug"],
-    "keywords": ["checkout","cart","logic"],
-    "contexts": ["web","checkout","api"],
-    "lay_explain": "Tricks the cart math to produce negative totals or free items.",
-    "why_it_matters": "Leads to fraud and revenue loss.",
-    "mitigations": ["Server-side validation","Order total clamps","Idempotent APIs"],
-    "likelihood": 0.4, "impact": 0.8, "cost_hint": 0.4
-  },
-  {
-    "id": "CFW",
-    "name": "Firmware Update Interception",
-    "aliases": ["evil firmware in the middle"],
-    "keywords": ["iot","firmware","update"],
-    "contexts": ["iot","device"],
-    "lay_explain": "Intercepts the device update to install a malicious firmware.",
-    "why_it_matters": "Gives persistent control of the device.",
-    "mitigations": ["Signed updates","TLS pinning","Rollback protection"],
-    "likelihood": 0.5, "impact": 0.9, "cost_hint": 0.7
-  },
-  {
-    "id": "DEF",
-    "name": "Default Credentials",
-    "aliases": ["admin:admin", "factory password"],
-    "keywords": ["iot","default","password"],
-    "contexts": ["iot","device","lan"],
-    "lay_explain": "Device ships with a default password that users may not change.",
-    "why_it_matters": "Allows easy unauthorized access.",
-    "mitigations": ["Force change on first use","Disable defaults","Randomized per device"],
-    "likelihood": 0.8, "impact": 0.7, "cost_hint": 0.1
-  },
-
-  {
-    "id": "credential_stuffing",
-    "name": "credential stuffing",
-    "aliases": ["credential reuse","reuse leaked credentials","reused creds","leaked creds"],
-    "scenarios": ["auth","practice_streaming","iot"],
-    "severity": "high",
-    "description": "Try email/password pairs leaked from other sites to log in.",
-    "why": "People often reuse passwords across services.",
-    "children": [],
-    "comms": "Using previously leaked email/password combinations to log in because users reuse passwords."
-  },
-  {
-    "id": "password_spraying",
-    "name": "password spraying",
-    "aliases": ["spray","common password tries","guess common passwords"],
-    "scenarios": ["auth","practice_streaming"],
-    "severity": "medium",
-    "description": "Try a few common passwords across many accounts to avoid lockout.",
-    "children": [],
-    "comms": "Trying a small set of common passwords across many users to dodge lockouts."
-  },
-  {
-    "id": "phishing_credentials",
-    "name": "phishing for credentials",
-    "aliases": ["phish password","fake login page","credential phishing"],
-    "scenarios": ["auth","practice_streaming","iot","doc_link"],
-    "severity": "high",
-    "description": "Trick the user into entering their password or code on a fake site.",
-    "children": [],
-    "comms": "Tricking someone with a convincing message or page to reveal their password."
-  },
-  {
-    "id": "shoulder_surfing_password",
-    "name": "shoulder surfing password",
-    "aliases": ["watch typing","observe password","look over shoulder"],
-    "scenarios": ["auth","practice_streaming"],
-    "severity": "low",
-    "description": "Observe the user typing a password on a shared device.",
-    "children": [],
-    "comms": "Watching someone type their password on a keyboard or screen."
-  },
-  {
     "id": "password_reset_flow",
     "name": "password reset flow",
-    "aliases": ["forgot password","reset via email"],
-    "scenarios": ["auth","practice_streaming"],
+    "aliases": ["forgot password", "reset via email", "reset password"],
+    "scenarios": ["auth"],
     "severity": "high",
-    "description": "Use the ‘Forgot password’ feature to reset access.",
-    "children": ["intercept_reset_email"]
+    "description": "Initiate account recovery using the site's ‘Forgot password’ feature for the victim’s account.",
+    "children": ["intercept_reset_email"],
+    "why": "A common recovery path abused to take over accounts."
   },
   {
     "id": "intercept_reset_email",
     "name": "intercept reset email",
-    "aliases": ["email takeover","access victim email","reset link capture"],
-    "scenarios": ["auth","practice_streaming"],
+    "aliases": ["access victim email", "open reset link", "email takeover"],
+    "scenarios": ["auth"],
     "severity": "high",
-    "description": "Access the victim’s email or device to click the reset link.",
-    "children": ["reused_email_password","shared_device_still_logged_in"],
-    "comms": "If you can open the victim’s mailbox or a device where they’re logged in, you can complete the reset."
+    "description": "Open the reset email sent to the victim to complete the password change, by accessing their mailbox or a device already logged in.",
+    "children": ["reused_email_password", "shared_device_still_logged_in"]
   },
   {
     "id": "reused_email_password",
     "name": "weak/reused email password",
-    "aliases": ["reuse creds on email","email credential stuffing"],
-    "scenarios": ["auth","practice_streaming","doc_link"],
+    "aliases": ["email credential reuse", "reuse creds on email", "email account reused password"],
+    "scenarios": ["auth"],
     "severity": "high",
-    "description": "Log into the victim’s email using reused or weak creds.",
+    "description": "Log into the victim’s email using previously leaked or reused credentials.",
     "children": []
   },
   {
     "id": "shared_device_still_logged_in",
     "name": "shared device still logged in",
-    "aliases": ["borrow unlocked laptop","browser session remains"],
-    "scenarios": ["auth","practice_streaming","doc_link"],
+    "aliases": ["borrowed laptop logged in", "session still active on shared device"],
+    "scenarios": ["auth", "doc_link"],
     "severity": "medium",
-    "description": "Use a device where the account is already logged in to access links or content.",
+    "description": "Use a shared or borrowed device where the victim is still logged in to their mailbox or portal.",
+    "children": []
+  },
+  {
+    "id": "CS",
+    "name": "Credential Stuffing",
+    "aliases": ["password reuse attack", "credential reuse", "reuse leaked credentials", "reused creds", "leaked creds", "combo list login"],
+    "scenarios": ["auth", "iot"],
+    "severity": "high",
+    "description": "Try email/password pairs leaked from other sites to log in.",
+    "children": ["lockout_rate_limit_bypass"]
+  },
+  {
+    "id": "password_spraying",
+    "name": "password spraying",
+    "aliases": ["try common passwords", "low-and-slow guessing"],
+    "scenarios": ["auth"],
+    "severity": "medium",
+    "description": "Try a small set of common passwords across many users to avoid lockouts.",
+    "children": ["lockout_rate_limit_bypass"]
+  },
+  {
+    "id": "phishing_credentials",
+    "name": "phishing for credentials",
+    "aliases": ["phish password", "fake login page", "credential phishing"],
+    "scenarios": ["auth", "doc_link"],
+    "severity": "high",
+    "description": "Trick the user into entering their password on a fake site or page controlled by the attacker.",
     "children": []
   },
   {
     "id": "lockout_rate_limit_bypass",
-    "name": "lockout/rate limit bypass",
-    "aliases": ["rate limit evasion","avoid lockout","slow attempts"],
-    "scenarios": ["auth","practice_streaming"],
+    "name": "lockout/rate-limit bypass",
+    "aliases": ["rate limit evasion", "avoid lockout", "rotate ips", "slow attempts"],
+    "scenarios": ["auth"],
     "severity": "medium",
-    "description": "Space out attempts or rotate IPs to avoid triggering lockout.",
+    "description": "Slow attempts or rotate IPs and accounts to avoid lockout or rate limits.",
     "children": []
   },
   {
-    "id": "use_stolen_account_saved_card",
-    "name": "use stolen account with saved card",
-    "aliases": ["account takeover checkout","ato saved card"],
-    "scenarios": ["checkout","practice_food"],
+    "id": "PRT",
+    "name": "Predictable Password Reset Token",
+    "aliases": ["reset token guess", "weak PRNG token", "predictable reset link"],
+    "scenarios": ["auth"],
     "severity": "high",
-    "description": "Take over an account that has a saved card and place an order.",
+    "description": "The password-reset link uses a guessable token so attackers can take over accounts without email access.",
+    "children": []
+  },
+  {
+    "id": "NRL",
+    "name": "No Rate Limiting on Reset",
+    "aliases": ["no throttle reset", "unlimited reset attempts"],
+    "scenarios": ["auth"],
+    "severity": "medium",
+    "description": "Reset flows allow unlimited attempts, enabling token/email brute-forcing and automation.",
+    "children": []
+  },
+
+  {
+    "id": "use_stolen_account_saved_card",
+    "name": "use stolen account’s saved card",
+    "aliases": ["use saved card on account", "saved payment details abuse"],
+    "scenarios": ["checkout"],
+    "severity": "high",
+    "description": "Place orders using payment methods saved in a compromised account.",
     "children": []
   },
   {
     "id": "use_leaked_card_details",
     "name": "use leaked card details",
-    "aliases": ["card testing","stolen card"],
-    "scenarios": ["checkout","practice_food"],
+    "aliases": ["stolen card", "card-not-present fraud"],
+    "scenarios": ["checkout"],
     "severity": "high",
-    "description": "Use leaked/stolen card details to pay for goods.",
+    "description": "Use a leaked card number with billing details to place fraudulent orders.",
+    "children": ["small_test_transactions"]
+  },
+  {
+    "id": "small_test_transactions",
+    "name": "small test transactions",
+    "aliases": ["micro authorizations", "card testing"],
+    "scenarios": ["checkout"],
+    "severity": "medium",
+    "description": "Run small test purchases to verify stolen card validity before larger orders.",
     "children": []
   },
   {
     "id": "stack_discounts_referrals",
     "name": "stack discounts/referrals",
-    "aliases": ["coupon stacking","promo stacking"],
-    "scenarios": ["checkout","practice_food"],
+    "aliases": ["coupon stacking", "abuse referrals", "promo abuse"],
+    "scenarios": ["checkout"],
     "severity": "medium",
-    "description": "Combine multiple discounts beyond what’s intended.",
-    "children": []
-  },
-  {
-    "id": "free_shipping_threshold_abuse",
-    "name": "abuse free shipping threshold",
-    "aliases": ["hit free shipping threshold","bundle to free shipping"],
-    "scenarios": ["checkout","practice_food"],
-    "severity": "low",
-    "description": "Manipulate basket to qualify for free shipping while abusing promos.",
-    "children": []
-  },
-  {
-    "id": "ship_to_accessible_pickup",
-    "name": "ship to accessible pickup point",
-    "aliases": ["parcel locker","public pickup"],
-    "scenarios": ["checkout","practice_food"],
-    "severity": "medium",
-    "description": "Use a pickup point that the fraudster can access.",
+    "description": "Combine multiple discounts or referral credits in unintended ways to reduce order cost below acceptable limits.",
     "children": []
   },
   {
     "id": "item_not_received_refund",
-    "name": "item-not-received refund abuse",
-    "aliases": ["refund fraud","INR claim"],
-    "scenarios": ["checkout","practice_food"],
+    "name": "false 'item not received' claim",
+    "aliases": ["INR refund fraud", "friendly fraud refund"],
+    "scenarios": ["checkout"],
     "severity": "medium",
-    "description": "Claim a refund while still collecting the parcel.",
+    "description": "Claim a legitimate order was not received to obtain a refund or replacement.",
     "children": []
   },
   {
-    "id": "join_home_wifi",
-    "name": "join home wi-fi",
-    "aliases": ["wifi password guessing","wps abuse","default wifi password"],
-    "scenarios": ["iot"],
+    "id": "idor_orders",
+    "name": "insecure direct object reference on orders",
+    "aliases": ["IDOR orders", "order id tampering", "change order id", "order enumeration"],
+    "scenarios": ["checkout"],
     "severity": "high",
-    "description": "Connect to the home network to reach the device locally.",
+    "description": "Access or modify another customer’s order by guessing or enumerating order identifiers.",
     "children": []
+  },
+
+  {
+    "id": "join_home_wifi",
+    "name": "join home Wi-Fi",
+    "aliases": ["get on home network", "connect to home wifi"],
+    "scenarios": ["iot"],
+    "severity": "medium",
+    "description": "Join the same local network as the camera (e.g., weak Wi-Fi password or guest access).",
+    "children": ["access_local_interface_rtsp"]
   },
   {
     "id": "access_local_interface_rtsp",
-    "name": "access local interface/rtsp",
-    "aliases": ["rtsp access","local web ui"],
+    "name": "access local interface/RTSP",
+    "aliases": ["local web admin", "rtsp stream local", "web ui on lan"],
     "scenarios": ["iot"],
     "severity": "high",
-    "description": "Use the camera’s local interface or RTSP stream on the LAN.",
+    "description": "Access the camera’s local web interface or RTSP stream when on the same LAN.",
     "children": []
   },
   {
     "id": "default_admin_password",
     "name": "default admin password",
-    "aliases": ["default creds","factory password"],
+    "aliases": ["factory admin password", "unchanged default creds"],
     "scenarios": ["iot"],
     "severity": "high",
-    "description": "Device admin panel left on factory credentials.",
+    "description": "Log into the camera using factory default administrator credentials.",
     "children": []
   },
   {
     "id": "default_stream_key",
-    "name": "default stream key",
-    "aliases": ["unchanged stream key"],
+    "name": "default or weak stream key",
+    "aliases": ["default rtmp key", "weak stream key"],
     "scenarios": ["iot"],
     "severity": "medium",
-    "description": "Streaming key not changed from default.",
+    "description": "Use a default/weak streaming key to pull or push video streams without authorization.",
     "children": []
   },
-  {
-    "id": "phishing_for_link",
-    "name": "phishing for the link",
-    "aliases": ["phish link","fake request for file"],
-    "scenarios": ["doc_link"],
-    "severity": "medium",
-    "description": "Trick the owner into sharing the document link.",
-    "children": []
-  },
-  {
-    "id": "social_engineering_share",
-    "name": "social engineering for sharing",
-    "aliases": ["ask for link","convince to share"],
-    "scenarios": ["doc_link"],
-    "severity": "medium",
-    "description": "Persuade someone to share the link directly.",
-    "children": []
-  },
+
   {
     "id": "predictable_link_enumeration",
     "name": "predictable link pattern + enumeration",
-    "aliases": ["guessable url","predict path pattern"],
+    "aliases": ["guessable url", "predictable document link", "enumerate links"],
     "scenarios": ["doc_link"],
     "severity": "high",
-    "description": "Learn naming/path patterns and try likely URLs.",
+    "description": "Predict the shape of document URLs (project names, dates, IDs) and enumerate to find valid links.",
     "children": []
   },
   {
     "id": "find_exposed_links_public",
     "name": "find exposed links in public repos/search",
-    "aliases": ["search leaked links","public repo links"],
+    "aliases": ["search leaked links", "links in public repos", "links indexed by search"],
     "scenarios": ["doc_link"],
-    "severity": "medium",
-    "description": "Search code, tickets, or the web for links left public.",
+    "severity": "high",
+    "description": "Locate document links inadvertently posted in public repositories, tickets, or search indexes.",
     "children": []
   },
   {
     "id": "use_shared_device_history",
     "name": "use shared device/browser history",
-    "aliases": ["borrow unlocked laptop","shared session"],
-    "scenarios": ["doc_link","auth"],
+    "aliases": ["borrow unlocked laptop", "browser history reveals link"],
+    "scenarios": ["doc_link", "auth"],
     "severity": "medium",
-    "description": "Open the document from a device where the link was already used.",
+    "description": "Recover document URLs from a shared computer’s history or recently-used items.",
+    "children": []
+  },
+  {
+    "id": "phishing_for_link",
+    "name": "phishing for the link",
+    "aliases": ["phish link", "fake request for link"],
+    "scenarios": ["doc_link"],
+    "severity": "medium",
+    "description": "Trick a user into sharing a supposedly private document link.",
+    "children": []
+  },
+  {
+    "id": "social_engineering_for_sharing",
+    "name": "social engineering for sharing",
+    "aliases": ["ask for link", "pretend to need access", "pretext to request link"],
+    "scenarios": ["doc_link"],
+    "severity": "medium",
+    "description": "Use pretexts to persuade someone with legitimate access to share the document link.",
     "children": []
   }
 ]
-
