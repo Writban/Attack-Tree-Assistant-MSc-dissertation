@@ -187,6 +187,8 @@
       }
       setScenarioGuideFromJson(js);
 
+      window.__scenarioJson = js;
+
       // Enter baseline phase
       window.__studyPhase = "baseline";
       push("phase", { phase: "baseline_start", scenario_id: s.scenario_id });
@@ -241,12 +243,56 @@
     }
 
     // End session: also log here
-    if (btnEndSession) {
-      const prev = btnEndSession.onclick;
-      btnEndSession.onclick = (e) => {
-        try { push("session_ui_end", {}); } catch {}
-        prev?.(e);
-      };
+    // End session: final snapshot? download log? reset UI + show Start dialog again
+if (btnEndSession) {
+  btnEndSession.onclick = () => {
+    try { push('session_ui_end_click', {}); } catch {}
+
+    const doSnap = confirm('End session?\n\nOptional: click “OK” to also save a FINAL snapshot of the current tree.\nClick “Cancel” to end without saving a final snapshot.');
+    if (doSnap) {
+      const name = snapshotTree('final');
+      try { push('final_snapshot', { snapshot: name }); } catch {}
     }
+
+    const wantLog = confirm('Download the session log (.jsonl)?');
+    if (wantLog) {
+      const s = window.__kbSession || {};
+      const safeSid = (s.session_id || new Date().toISOString()).replace(/[:.]/g, '-');
+      const name = `log_${s.scenario_id || 'scen'}_${safeSid}.jsonl`;
+      const lines = (window.__studyLogExport || (() => {
+        // Build JSONL from the private LOG we keep
+        const arr = []; try {
+          // Reuse the same LOG used by push(); we attached exporter below just in case
+          arr.push(...(window.__STUDY_LOG_ARRAY__ || []));
+        } catch {}
+        return arr.map(o => JSON.stringify(o)).join('\n') + '\n';
+      }))();
+      const blob = new Blob([lines], { type: 'application/x-ndjson' });
+      (window.Utils?.saveFile ? Utils.saveFile : ((n, b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0); }))(name, blob);
+    }
+
+    // Clear canvas & session; return to Start Session
+    try { window.graph?.clear?.(); } catch {}
+    window.__kbSession = null;
+    window.__studyPhase = 'not_started';
+    try {
+      const modeSpan = document.getElementById('study-mode');
+      const scenSpan = document.getElementById('study-scenario');
+      if (modeSpan) modeSpan.textContent = 'mode: ?';
+      if (scenSpan) scenSpan.textContent = 'scenario: ?';
+    } catch {}
+
+    // Hide assistant until a new session starts
+    try {
+      const kbPanel = document.getElementById('kb-panel');
+      kbPanel?.querySelector('[data-tab="suggest"]')?.style && (kbPanel.querySelector('[data-tab="suggest"]').style.display = 'none');
+      kbPanel?.querySelector('[data-tab="review"]')?.style && (kbPanel.querySelector('[data-tab="review"]').style.display  = 'none');
+    } catch {}
+
+    // Re-open Start Session dialog
+    document.getElementById('session-modal')?.classList.remove('hidden');
+  };
+}
+
   });
 })();

@@ -1,213 +1,281 @@
-window.KB = window.KB || {};
-KB.core = (() => {
-  const state = {
-    cfg: null,
-    kb: [],
-    indices: null,
-    log: []
-  };
+// js/kb-core.js — KB loader + normalization/aliases + Suggest/Prune/Explain engines
+// with scenario gold boosting and AND-pair synergy (esp. for Case 1). Prune protects golds.
 
-  // Config loader
-  async function loadConfig() {
+(function () {
+  if (!window.KB) window.KB = {};
+  const Core = {};
+  KB.core = Core;
+
+  /* ---------------- state ---------------- */
+  let CONFIG = {
+    suggest: { minScore: 0.35, topK: 3, moreK: 7 },
+    prune:   { flagThreshold: 0.45, maxVisible: 3 }
+  };
+  let KB_RAW = [];
+  const BY_ID = new Map();
+  const CANON = new Map();
+  const ALIAS = new Map();
+
+  // Common patterns that generalize across scenarios (fallbacks)
+  const COMMON_IDS = [
+    'credential_stuffing','phishing_credentials','password_spraying',
+    'password_reset_flow','intercept_reset_email',
+    'use_stolen_account_saved_card','use_leaked_card_details',
+    'stack_discounts_referrals','item_not_received_refund',
+    'join_home_wifi','access_local_interface_rtsp','default_admin_password',
+    'default_stream_key','predictable_link_enumeration','find_exposed_links_public',
+    'use_shared_device_history','phishing_for_link'
+  ];
+
+  // AND-pair synergy (esp. Case 1)
+  // If one exists, strongly suggest the other with an AND rationale.
+  const AND_PAIRS = [
+    { a: 'password_reset_flow', b: 'intercept_reset_email',
+      text: 'Password reset typically requires BOTH requesting a reset AND accessing the reset email.' }
+  ];
+
+  /* ---------------- utils ---------------- */
+  const sev = s => ({ high: 0.7, medium: 0.5, low: 0.3 }[String(s||'').toLowerCase()] ?? 0.4);
+  const norm = s => String(s || '')
+    .toLowerCase()
+    .replace(/[_\-]+/g, ' ')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  function addName(entry, name) {
+    const k = norm(name);
+    if (k && !CANON.has(k)) CANON.set(k, entry.id);
+  }
+  function addAlias(entry, alias) {
+    const k = norm(alias);
+    if (k && !ALIAS.has(k)) ALIAS.set(k, entry.id);
+  }
+  function canonIdFor(label) {
+    const k = norm(label);
+    return ALIAS.get(k) || CANON.get(k) || null;
+  }
+  function inScenario(entry, scenarioId) {
+    if (!scenarioId || scenarioId === 'sandbox') return true;
+    const list = entry.scenarios || [];
+    return list.includes(scenarioId);
+  }
+
+  function currentScenarioJson() {
+    try { return window.__scenarioJson || null; } catch { return null; }
+  }
+  function goldIdSet() {
+    const js = currentScenarioJson();
+    const arr = Array.isArray(js?.gold_must_have) ? js.gold_must_have : [];
+    const set = new Set();
+    for (const name of arr) {
+      const id = canonIdFor(name);
+      if (id) set.add(id);
+    }
+    return set;
+  }
+
+  /* ---------------- public: load config & KB ---------------- */
+  Core.loadConfig = async function loadConfig() {
     try {
-      const r = await fetch('data/config.json?v=' + Date.now(), { cache: 'no-store' });
-      state.cfg = await r.json();
-      console.info('[KB] config loaded', state.cfg);
-    } catch (e) {
-      console.warn('[KB] config missing, using defaults', e);
-      state.cfg = {
-        experiment: { mode: 'kb', scenario: 'auth' },
-        matching: { minScore: 0.45, fuzzyThreshold: 0.86, weights: { exact:1, alias:0.92, keyword:0.62, regex:0.75, fuzzy:0.52, contextBonus:0.2, parentBonus:0.15 }, normalizers:{lowercase:true,stripPunctuation:true,collapseWhitespace:true,removeStopwords:true}, stopwords:["a","an","and","as","at","be","by","for","from","in","into","is","it","its","of","on","or","that","the","their","to","with","via","over"], maxReturned: 10 },
-        pruning: { flagThreshold: 0.45, contextMismatchPenalty: 0.2, weights: { likelihood:0.5, impact:0.4, cost:-0.1 } },
-        logging: { enabled: true, maxEntries: 5000 },
-        woz: { enabled:false, remoteUrl:'woz/feed.auth.json', pollMs:4000, maxBackoffMs:60000 },
-        ui: { debounceMs: 180 }
-      };
-    }
-    document.dispatchEvent(new CustomEvent('kb:config:ready', { detail: state.cfg }));
-  }
+      const res = await fetch('data/config.json', { cache: 'no-store' });
+      if (res.ok) CONFIG = { ...CONFIG, ...(await res.json()) };
+    } catch (e) { console.warn('[kb-core] config load failed', e); }
+  };
+  Core.getConfig = () => CONFIG;
 
-  // KB loader
-async function loadKB() {
-  try {
-    const r = await fetch('data/attack_patterns.json', { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    state.kb = await r.json();
-  } catch (e) {
-    console.warn('[KB] attack_patterns.json not found/invalid. Proceeding with empty KB.', e);
-    state.kb = [];
-  }
-  state.indices = buildIndices(state.kb);
-  window.__KB_PATTERNS__ = state.kb; // allow Explain to soft-match by name
-  console.info('[KB] patterns loaded:', state.kb.length);
-}
-
-
-  // Logging
-  function log(event, payload) {
-    if (state.cfg?.logging?.enabled === false) return;
-    const max = state.cfg?.logging?.maxEntries || 5000;
-    state.log.push({ ts: new Date().toISOString(), event, ...payload });
-    if (state.log.length > max) state.log.splice(0, state.log.length - max);
-  }
-  const getLog = () => state.log.slice();
-  const clearLog = () => { state.log.length = 0; };
-
-  // Normalization
-  const stripPunct = s => (s || '').replace(/[^\p{L}\p{N}\s]/gu, ' ');
-  const collapseWS = s => (s || '').replace(/\s+/g, ' ').trim();
-  function normalize(s) {
-    let t = '' + (s || '');
-    if (state.cfg.matching.normalizers.lowercase) t = t.toLowerCase();
-    if (state.cfg.matching.normalizers.stripPunctuation) t = stripPunct(t);
-    if (state.cfg.matching.normalizers.collapseWhitespace) t = collapseWS(t);
-    return t;
-  }
-  function tokenize(s) {
-    const stop = new Set(state.cfg.matching.stopwords || []);
-    return normalize(s).split(' ').filter(Boolean).filter(w => !stop.has(w));
-  }
-
-  // Levenshtein similarity
-  function lev(a, b) {
-    if (a === b) return 0;
-    const al = a.length, bl = b.length;
-    if (!al) return bl; if (!bl) return al;
-    const v0 = Array(bl + 1), v1 = Array(bl + 1);
-    for (let j=0;j<=bl;j++) v0[j]=j;
-    for (let i=0;i<al;i++) {
-      v1[0]=i+1;
-      for (let j=0;j<bl;j++) {
-        const cost = a[i] === b[j] ? 0 : 1;
-        v1[j+1] = Math.min(v1[j]+1, v0[j+1]+1, v0[j]+cost);
+  Core.loadKB = async function loadKB() {
+    try {
+      const res = await fetch('data/attack_patterns.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`KB fetch failed: ${res.status}`);
+      const js = await res.json();
+      KB_RAW = Array.isArray(js) ? js : (js.patterns || []);
+      BY_ID.clear(); CANON.clear(); ALIAS.clear();
+      for (const e of KB_RAW) {
+        if (!e.id) continue;
+        BY_ID.set(e.id, e);
+        addName(e, e.name || e.id);
+        (e.aliases || []).forEach(a => addAlias(e, a));
       }
-      for (let j=0;j<=bl;j++) v0[j]=v1[j];
+      console.log('[kb-core] KB loaded:', KB_RAW.length, 'entries');
+    } catch (e) {
+      console.warn('[kb-core] KB load failed', e);
+      KB_RAW = [];
     }
-    return v1[bl];
-  }
-  const sim = (a,b) => {
-    a = normalize(a); b = normalize(b);
-    if (!a || !b) return 0;
-    const d = lev(a,b);
-    return 1 - d / Math.max(a.length, b.length);
   };
 
-  function buildIndices(kb) {
-    const aliasIndex = new Map();
-    const keywordIndex = new Map();
-    const nameIndex = new Map();
-    const pats = [];
-    for (const p of kb) {
-      const id = p.id || p.name;
-      const nameNorm = normalize(p.name || id);
-      nameIndex.set(nameNorm, id);
-      const aliases = (p.aliases || []).map(normalize);
-      const keywords = (p.keywords || []).map(normalize);
-      const regex = (p.regex || []).map(r => {
-        try { return new RegExp(r, 'i'); } catch { return null; }
-      }).filter(Boolean);
+  /* ---------------- existing tree introspection ---------------- */
+  Core.treeCanonSet = function treeCanonSet(graph) {
+    const s = new Set();
+    try {
+      (graph?.getElements?.() || []).forEach(el => {
+        const label = el.attr?.('label/text') || '';
+        const id = canonIdFor(label);
+        if (id) s.add(id);
+      });
+    } catch {}
+    return s;
+  };
 
-      for (const a of aliases.flatMap(tokenize)) {
-        if (!aliasIndex.has(a)) aliasIndex.set(a, new Set());
-        aliasIndex.get(a).add(id);
-      }
-      for (const k of keywords.flatMap(tokenize)) {
-        if (!keywordIndex.has(k)) keywordIndex.set(k, new Set());
-        keywordIndex.get(k).add(id);
-      }
-      pats.push({ id, name: p.name, nameNorm, aliases, keywords, regex, contexts: new Set((p.contexts || []).map(String)), parentsPreferred: (p.preferred_parents || []).map(normalize), meta: p });
-    }
-    return { aliasIndex, keywordIndex, nameIndex, pats };
-  }
+  /* ---------------- Suggest engine ---------------- */
+  Core.suggest = function suggest({ graph, parentLabel, scenarioId, limitTop = CONFIG.suggest.topK, limitMore = CONFIG.suggest.moreK }) {
+    const existingIds = Core.treeCanonSet(graph);
+    const parentId = parentLabel ? canonIdFor(parentLabel) : null;
+    const golds = goldIdSet();
 
-  function matchTextToPatterns({ text, contextFlags = new Set(), parentName = '' }) {
-    const m = state.cfg.matching, W = m.weights;
-    const { aliasIndex, keywordIndex, nameIndex, pats } = state.indices;
-    const tokens = tokenize(text); const parentNorm = normalize(parentName);
-    const seen = new Map();
+    // 1) typical children from parent
+    const fromParent = [];
+    if (parentId) {
+      const p = BY_ID.get(parentId);
+      const kids = (p?.children || []).map(ch => typeof ch === 'string' ? ch : ch?.id).filter(Boolean);
+      for (const kidRef of kids) {
+        const kidId = BY_ID.has(kidRef) ? kidRef : canonIdFor(kidRef);
+        const e = kidId ? BY_ID.get(kidId) : null;
+        if (!e || existingIds.has(e.id)) continue;
+        let score = sev(e.severity) + 0.25 + (inScenario(e, scenarioId) ? 0.2 : 0);
+        let reason = `Typical child of “${parentLabel}”.`;
+        let badge = null;
 
-    const add = (id, delta, why) => {
-      const acc = seen.get(id) || { id, score: 0, why: [] };
-      acc.score += delta; if (why) acc.why.push(why);
-      seen.set(id, acc);
-    };
+        // Gold boost
+        if (golds.has(e.id)) { score += 0.25; badge = 'must-have'; reason = 'Must-have path for this scenario.'; }
 
-    const textNorm = normalize(text);
-    if (nameIndex.has(textNorm)) add(nameIndex.get(textNorm), W.exact, `exact "${textNorm}"`);
-    for (const t of tokens) {
-      const a = aliasIndex.get(t); if (a) for (const id of a) add(id, W.alias*0.5, `alias "${t}"`);
-      const k = keywordIndex.get(t); if (k) for (const id of k) add(id, W.keyword*0.5, `keyword "${t}"`);
-    }
-    for (const p of pats) for (const rx of p.regex) if (rx.test(text)) add(p.id, W.regex, `regex ${rx}`);
-    for (const p of pats) {
-      const s1 = sim(text, p.name || '');
-      if (s1 >= m.fuzzyThreshold) add(p.id, W.fuzzy*s1, `fuzzy name ${s1.toFixed(2)}`);
-      for (const a of p.aliases) {
-        const s = sim(text, a);
-        if (s >= m.fuzzyThreshold) add(p.id, W.fuzzy*s, `fuzzy alias ${s.toFixed(2)}`);
-      }
-    }
-    if (contextFlags && contextFlags.size) {
-      for (const p of pats) {
-        if (!p.contexts.size) continue;
-        const inter = [...p.contexts].some(c => contextFlags.has(c));
-        if (inter) add(p.id, W.contextBonus, 'context bonus');
-      }
-    }
-    if (parentNorm) {
-      for (const p of pats) {
-        if (p.parentsPreferred?.length) {
-          const ok = p.parentsPreferred.some(pp => sim(parentNorm, pp) >= 0.9);
-          if (ok) add(p.id, W.parentBonus, `parent prefers "${parentNorm}"`);
+        // AND-pair synergy
+        for (const pair of AND_PAIRS) {
+          const other = (e.id === pair.a) ? pair.b : (e.id === pair.b ? pair.a : null);
+          if (other && existingIds.has(other)) {
+            score += 0.20;
+            reason = pair.text;
+            break;
+          }
         }
+
+        fromParent.push({ id: e.id, name: e.name || e.id, source: 'parent', reason, score, badge });
       }
     }
 
-    const out = [...seen.values()]
-      .filter(r => r.score >= m.minScore)
-      .sort((a,b) => b.score - a.score)
-      .slice(0, m.maxReturned)
-      .map(r => {
-        const p = pats.find(pp => pp.id === r.id);
-        return { id: r.id, name: p?.name || r.id, score:+r.score.toFixed(4), why:r.why, meta: p?.meta || {} };
+    // 2) scenario-tagged entries not in tree
+    const fromScenario = KB_RAW
+      .filter(e => inScenario(e, scenarioId) && !existingIds.has(e.id))
+      .map(e => {
+        let score = sev(e.severity) + 0.2;
+        let reason = `Relevant to the chosen scenario.`;
+        let badge = null;
+        if (golds.has(e.id)) { score += 0.25; reason = 'Must-have path for this scenario.'; badge = 'must-have'; }
+        // Pair synergy with existing graph
+        for (const pair of AND_PAIRS) {
+          const other = (e.id === pair.a) ? pair.b : (e.id === pair.b ? pair.a : null);
+          if (other && existingIds.has(other)) { score += 0.20; reason = pair.text; break; }
+        }
+        return { id: e.id, name: e.name || e.id, source: 'scenario', reason, score, badge };
       });
 
-    log('match', { text: textNorm.slice(0,120), parent: parentNorm, returned: out.length });
-    return out;
-  }
+    // 3) global fallbacks
+    const fromCommon = COMMON_IDS
+      .map(id => BY_ID.get(id))
+      .filter(e => e && !existingIds.has(e.id))
+      .map(e => {
+        let score = sev(e.severity) + (inScenario(e, scenarioId) ? 0.1 : 0);
+        let reason = `Common in many attack trees.`;
+        let badge = null;
+        if (golds.has(e.id)) { score += 0.25; reason = 'Must-have path for this scenario.'; badge = 'must-have'; }
+        for (const pair of AND_PAIRS) {
+          const other = (e.id === pair.a) ? pair.b : (e.id === pair.b ? pair.a : null);
+          if (other && existingIds.has(other)) { score += 0.20; reason = pair.text; break; }
+        }
+        return { id: e.id, name: e.name || e.id, source: 'common', reason, score, badge };
+      });
 
-  function explainFor(meta) {
-    const L = Utils.clamp01(meta?.likelihood ?? 0.5);
-    const I = Utils.clamp01(meta?.impact ?? 0.5);
-    const sev = +(L*I).toFixed(2);
-    const band = sev >= 0.75 ? 'High' : sev >= 0.45 ? 'Medium' : 'Low';
-    return {
-      severity: sev, band,
-      lay: meta?.lay_explain || 'This is a way an attacker might progress toward the goal.',
-      why: meta?.why_it_matters || 'If present, it increases the chance of compromise.',
-      mitigations: meta?.mitigations || []
-    };
-  }
+    // Combine + dedupe
+    const byId = new Map();
+    [...fromParent, ...fromScenario, ...fromCommon].forEach(c => {
+      const prev = byId.get(c.id);
+      if (!prev || c.score > prev.score) byId.set(c.id, c);
+    });
 
-  function pruneDecision(meta, contextMismatch = false) {
-    const W = state.cfg?.pruning?.weights || { likelihood:0.5, impact:0.4, cost:-0.1 };
-    const L = Utils.clamp01(meta?.likelihood ?? 0.5);
-    const I = Utils.clamp01(meta?.impact ?? 0.5);
-    const C = Utils.clamp01(meta?.cost_hint ?? 0.5);
-    let score = W.likelihood*L + W.impact*I + W.cost*C;
-    if (contextMismatch) score -= (state.cfg?.pruning?.contextMismatchPenalty || 0.2);
-    const flag = score < (state.cfg?.pruning?.flagThreshold ?? 0.45);
-    const reasons = [];
-    if (L < 0.3) reasons.push('Low likelihood here');
-    if (C > 0.7) reasons.push('High attacker effort/cost');
-    if (contextMismatch) reasons.push('Out of scope');
-    return { flag, score:+score.toFixed(4), reasons };
-  }
+    const MIN = CONFIG.suggest.minScore ?? 0.35;
+    const ranked = [...byId.values()]
+      .filter(c => c.score >= MIN)
+      .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name));
 
-  return {
-    loadConfig, loadKB,
-    config: () => state.cfg,
-    matchTextToPatterns, explainFor, pruneDecision,
-    log, getLog, clearLog
+    const top  = ranked.slice(0, limitTop);
+    const more = ranked.slice(limitTop, limitTop + limitMore);
+    return { top, more, parentId, parentLabel };
+  };
+
+  /* ---------------- Prune engine ---------------- */
+  Core.prune = function prune({ graph, scenarioId, maxVisible = CONFIG.prune.maxVisible }) {
+    const elems = graph?.getElements?.() || [];
+    const seenName = new Map(); // canonical -> element id
+    const flags = [];
+    const golds = goldIdSet();
+
+    for (const el of elems) {
+      const label = el.attr?.('label/text') || '';
+      if (!label) continue;
+      if (el.get?.('gate')) continue; // ignore AND/OR gates
+
+      const id = canonIdFor(label);
+      const entry = id ? BY_ID.get(id) : null;
+      const canonKey = norm(entry?.name || label);
+
+      // Protect scenario golds from pruning
+      if (id && golds.has(id)) continue;
+
+      // duplicates
+      if (seenName.has(canonKey)) {
+        flags.push({
+          elementId: el.id,
+          label,
+          reason: `Looks like a duplicate of “${graph.getCell(seenName.get(canonKey))?.attr?.('label/text') || entry?.name || label}”.`,
+          score: 0.15
+        });
+        continue;
+      }
+      seenName.set(canonKey, el.id);
+
+      // keep score
+      let keep = entry ? sev(entry.severity) : 0.4;
+      if (entry) keep += inScenario(entry, scenarioId) ? 0.15 : -0.15;
+      if (/^(step|task|misc|other|todo)$/i.test(label.trim())) keep -= 0.25;
+
+      if (keep < (CONFIG.prune.flagThreshold ?? 0.45)) {
+        flags.push({
+          elementId: el.id,
+          label,
+          reason: entry
+            ? `Low value here given the current scenario and severity (${entry.severity || 'unknown'}).`
+            : 'Unrecognized / vague item may be out of scope.',
+          score: keep
+        });
+      }
+    }
+
+    return flags.sort((a,b) => a.score - b.score).slice(0, maxVisible);
+  };
+
+  /* ---------------- Explain engine ---------------- */
+  Core.explain = function explain(label) {
+    const id = canonIdFor(label);
+    if (!id) {
+      return {
+        title: label || '—',
+        severity: 'unknown',
+        summary: 'No specific entry found in the knowledge base for this label.',
+        why: ''
+      };
+    }
+    const e = BY_ID.get(id) || {};
+    const title = e.name || label;
+    const severity = e.severity || 'unknown';
+    const summary =
+      e.description || e.comms ||
+      'This item appears in the KB but lacks a narrative.';
+    const why = e.why || '';
+    return { title, severity, summary, why };
+  };
+
+  /* ---------------- Logging passthrough ---------------- */
+  Core.log = function(ev, data) {
+    console.log('[kb]', ev, data || {});
   };
 })();
