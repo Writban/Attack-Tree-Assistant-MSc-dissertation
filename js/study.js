@@ -63,78 +63,77 @@
   }
 
   // ---- Tree image export (PNG with participant id) ----
-async function downloadTreeImageForSession() {
-  const pid = (window.__kbSession?.participant_id || 'session').replace(/[^\w\-]+/g, '_');
-  await exportPaperPNG(`${pid}.png`);
-}
-
-function exportPaperPNG(filename) {
-  const paper = window.paper, graph = window.graph;
-  if (!paper || !graph) return console.warn('[export] paper/graph not ready');
-  const elements = graph.getElements?.() || [];
-  if (!elements.length) return console.warn('[export] no elements; skipping image');
-
-  // Compute content bbox (elements only) in graph coords
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const el of elements) {
-    const p = el.position ? el.position() : { x: el.get('position')?.x || 0, y: el.get('position')?.y || 0 };
-    const s = el.size ? el.size() : (el.get?.('size') || { width: 200, height: 44 });
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + s.width);
-    maxY = Math.max(maxY, p.y + s.height);
+  async function downloadTreeImageForSession() {
+    const pid = (window.__kbSession?.participant_id || 'session').replace(/[^\w\-]+/g, '_');
+    await exportPaperPNG(`${pid}.png`);
   }
-  if (!isFinite(minX) || !isFinite(minY)) return console.warn('[export] invalid bbox; skipping');
 
-  const pad = 24;
-  const tr = (paper.translate && paper.translate()) || { tx: 0, ty: 0 };
-  const vbX = Math.floor(minX + (tr.tx || 0) - pad);
-  const vbY = Math.floor(minY + (tr.ty || 0) - pad);
-  const vbW = Math.ceil((maxX - minX) + 2 * pad);
-  const vbH = Math.ceil((maxY - minY) + 2 * pad);
+  function exportPaperPNG(filename) {
+    const paper = window.paper, graph = window.graph;
+    if (!paper || !graph) return console.warn('[export] paper/graph not ready');
+    const elements = graph.getElements?.() || [];
+    if (!elements.length) return console.warn('[export] no elements; skipping image');
 
-  // Clone current SVG and set a tight viewBox
-  const svgOrig = paper.el.querySelector('svg');
-  if (!svgOrig) return console.warn('[export] no svg element');
-  const svg = svgOrig.cloneNode(true);
-  svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-  svg.setAttribute('width', String(vbW));
-  svg.setAttribute('height', String(vbH));
+    // Compute content bbox (elements only) in graph coords
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of elements) {
+      const p = el.position ? el.position() : { x: el.get('position')?.x || 0, y: el.get('position')?.y || 0 };
+      const s = el.size ? el.size() : (el.get?.('size') || { width: 200, height: 44 });
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + s.width);
+      maxY = Math.max(maxY, p.y + s.height);
+    }
+    if (!isFinite(minX) || !isFinite(minY)) return console.warn('[export] invalid bbox; skipping');
 
-  const svgString = new XMLSerializer().serializeToString(svg);
-  const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
-  const url = URL.createObjectURL(svgBlob);
+    const pad = 24;
+    const tr = (paper.translate && paper.translate()) || { tx: 0, ty: 0 };
+    const vbX = Math.floor(minX + (tr.tx || 0) - pad);
+    const vbY = Math.floor(minY + (tr.ty || 0) - pad);
+    const vbW = Math.ceil((maxX - minX) + 2 * pad);
+    const vbH = Math.ceil((maxY - minY) + 2 * pad);
 
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(vbW * scale));
-      canvas.height = Math.max(1, Math.round(vbH * scale));
-      const ctx = canvas.getContext('2d');
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, 0, 0, vbW, vbH);
-      canvas.toBlob((pngBlob) => {
-        try {
-          if (pngBlob) Utils.saveFile(filename, pngBlob);
-          else Utils.saveFile(filename.replace(/\.png$/i, '.svg'), svgBlob); // fallback
-        } finally {
-          URL.revokeObjectURL(url);
-          resolve();
-        }
-      }, 'image/png', 1.0);
-    };
-    img.onerror = () => {
-      // Fallback: offer SVG if rasterization fails
-      Utils.saveFile(filename.replace(/\.png$/i, '.svg'), svgBlob);
-      URL.revokeObjectURL(url);
-      resolve();
-    };
-    img.src = url;
-  });
-}
+    // Clone current SVG and set a tight viewBox
+    const svgOrig = paper.el.querySelector('svg');
+    if (!svgOrig) return console.warn('[export] no svg element');
+    const svg = svgOrig.cloneNode(true);
+    svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+    svg.setAttribute('width', String(vbW));
+    svg.setAttribute('height', String(vbH));
 
+    const svgString = new XMLSerializer().serializeToString(svg);
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(svgBlob);
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(vbW * scale));
+        canvas.height = Math.max(1, Math.round(vbH * scale));
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, vbW, vbH);
+        canvas.toBlob((pngBlob) => {
+          try {
+            if (pngBlob) Utils.saveFile(filename, pngBlob);
+            else Utils.saveFile(filename.replace(/\.png$/i, '.svg'), svgBlob); // fallback
+          } finally {
+            URL.revokeObjectURL(url);
+            resolve();
+          }
+        }, 'image/png', 1.0);
+      };
+      img.onerror = () => {
+        // Fallback: offer SVG if rasterization fails
+        Utils.saveFile(filename.replace(/\.png$/i, '.svg'), svgBlob);
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      img.src = url;
+    });
+  }
 
   async function fetchScenarioJson(scenario_id) {
     // Sandbox mode: no fetch; return a virtual scenario object
@@ -264,9 +263,8 @@ function exportPaperPNG(filename) {
       window.__scenarioJson = js;
 
       if (js && js.aliases) {
-  try { KB.core.addScenarioAliases(js.aliases); KB.core.log('aliases_loaded', { count: Object.keys(js.aliases).length }); } catch(e) { console.warn(e); }
-}
-
+        try { KB.core.addScenarioAliases(js.aliases); KB.core.log('aliases_loaded', { count: Object.keys(js.aliases).length }); } catch(e) { console.warn(e); }
+      }
 
       // Enter baseline phase
       window.__studyPhase = "baseline";
@@ -310,73 +308,66 @@ function exportPaperPNG(filename) {
       };
     }
 
-    // Download log (JSONL)
     // Download log (JSONL) + PNG of current tree
-if (btnDownloadLog) {
-  btnDownloadLog.onclick = async () => {
-    const s = window.__kbSession || {};
-    const safeSid = (s.session_id || nowIso()).replace(/[:.]/g, "-");
-    const name = `log_${s.scenario_id || "scen"}_${safeSid}.jsonl`;
-    const lines = LOG.map((o) => JSON.stringify(o)).join("\n") + "\n";
-    saveFile(name, new Blob([lines], { type: "application/x-ndjson" }));
+    if (btnDownloadLog) {
+      btnDownloadLog.onclick = async () => {
+        const s = window.__kbSession || {};
+        const safeSid = (s.session_id || nowIso()).replace(/[:.]/g, "-");
+        const name = `log_${s.scenario_id || "scen"}_${safeSid}.jsonl`;
+        const lines = LOG.map((o) => JSON.stringify(o)).join("\n") + "\n";
+        saveFile(name, new Blob([lines], { type: "application/x-ndjson" }));
 
-    // also save an image of the current tree as PARTICIPANTID.png (or .svg fallback)
-    await downloadTreeImageForSession();
-  };
-}
-
-
-    // End session: also log here
-    // End session: final snapshot? download log? reset UI + show Start dialog again
-if (btnEndSession) {
-  btnEndSession.onclick = () => {
-    try { push('session_ui_end_click', {}); } catch {}
-
-    const doSnap = confirm('End session?\n\nOptional: click “OK” to also save a FINAL snapshot of the current tree.\nClick “Cancel” to end without saving a final snapshot.');
-    if (doSnap) {
-      const name = snapshotTree('final');
-      try { push('final_snapshot', { snapshot: name }); } catch {}
+        // also save an image of the current tree as PARTICIPANTID.png (or .svg fallback)
+        await downloadTreeImageForSession();
+      };
     }
 
-    const wantLog = confirm('Download the session log (.jsonl)?');
-    if (wantLog) {
-      const s = window.__kbSession || {};
-      const safeSid = (s.session_id || new Date().toISOString()).replace(/[:.]/g, '-');
-      const name = `log_${s.scenario_id || 'scen'}_${safeSid}.jsonl`;
-      const lines = (window.__studyLogExport || (() => {
-        // Build JSONL from the private LOG we keep
-        const arr = []; try {
-          // Reuse the same LOG used by push(); we attached exporter below just in case
-          arr.push(...(window.__STUDY_LOG_ARRAY__ || []));
+    // End session: offer final snapshot, download log, and PNG; then reset UI
+    if (btnEndSession) {
+      btnEndSession.onclick = async () => {
+        try { push('session_ui_end_click', {}); } catch {}
+
+        const doSnap = confirm('End session?\n\nOptional: click “OK” to also save a FINAL snapshot of the current tree.\nClick “Cancel” to end without saving a final snapshot.');
+        if (doSnap) {
+          const name = snapshotTree('final');
+          try { push('final_snapshot', { snapshot: name }); } catch {}
+        }
+
+        const wantLog = confirm('Download the session log (.jsonl) now?');
+        if (wantLog) {
+          const s = window.__kbSession || {};
+          const safeSid = (s.session_id || new Date().toISOString()).replace(/[:.]/g, '-');
+          const name = `log_${s.scenario_id || 'scen'}_${safeSid}.jsonl`;
+          const lines = LOG.map(o => JSON.stringify(o)).join('\n') + '\n';
+          const blob = new Blob([lines], { type: 'application/x-ndjson' });
+          (window.Utils?.saveFile ? Utils.saveFile : ((n, b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0); }))(name, blob);
+
+          // also save an image of the current tree
+          await downloadTreeImageForSession();
+        }
+
+        // Clear canvas & session; return to Start Session
+        try { window.graph?.clear?.(); } catch {}
+        window.__kbSession = null;
+        window.__studyPhase = 'not_started';
+        try {
+          const modeSpan = document.getElementById('study-mode');
+          const scenSpan = document.getElementById('study-scenario');
+          if (modeSpan) modeSpan.textContent = 'mode: ?';
+          if (scenSpan) scenSpan.textContent = 'scenario: ?';
         } catch {}
-        return arr.map(o => JSON.stringify(o)).join('\n') + '\n';
-      }))();
-      const blob = new Blob([lines], { type: 'application/x-ndjson' });
-      (window.Utils?.saveFile ? Utils.saveFile : ((n, b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0); }))(name, blob);
+
+        // Hide assistant until a new session starts
+        try {
+          const kbPanel = document.getElementById('kb-panel');
+          kbPanel?.querySelector('[data-tab="suggest"]')?.style && (kbPanel.querySelector('[data-tab="suggest"]').style.display = 'none');
+          kbPanel?.querySelector('[data-tab="review"]')?.style && (kbPanel.querySelector('[data-tab="review"]').style.display  = 'none');
+        } catch {}
+
+        // Re-open Start Session dialog
+        document.getElementById('session-modal')?.classList.remove('hidden');
+      };
     }
-
-    // Clear canvas & session; return to Start Session
-    try { window.graph?.clear?.(); } catch {}
-    window.__kbSession = null;
-    window.__studyPhase = 'not_started';
-    try {
-      const modeSpan = document.getElementById('study-mode');
-      const scenSpan = document.getElementById('study-scenario');
-      if (modeSpan) modeSpan.textContent = 'mode: ?';
-      if (scenSpan) scenSpan.textContent = 'scenario: ?';
-    } catch {}
-
-    // Hide assistant until a new session starts
-    try {
-      const kbPanel = document.getElementById('kb-panel');
-      kbPanel?.querySelector('[data-tab="suggest"]')?.style && (kbPanel.querySelector('[data-tab="suggest"]').style.display = 'none');
-      kbPanel?.querySelector('[data-tab="review"]')?.style && (kbPanel.querySelector('[data-tab="review"]').style.display  = 'none');
-    } catch {}
-
-    // Re-open Start Session dialog
-    document.getElementById('session-modal')?.classList.remove('hidden');
-  };
-}
 
   });
 })();
