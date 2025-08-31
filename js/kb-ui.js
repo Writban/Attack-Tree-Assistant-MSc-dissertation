@@ -77,7 +77,7 @@
     if (more.length) {
       const moreWrap = document.createElement('details');
       const sum = document.createElement('summary');
-      sum.textContent = `Show more (${more.length})`;
+      sum.textContent = `Show ${more.length} more (includes low-confidence or possibly redundant items)`;
       moreWrap.appendChild(sum);
       const moreList = document.createElement('div');
       more.forEach((sug, i) => moreList.appendChild(suggestionRow(sug, top.length + i + 1)));
@@ -99,25 +99,97 @@
     }
   }
 
-  function suggestionRow(sug, rank) {
-    const row = document.createElement('div'); row.className = 'row';
-    const left = document.createElement('div'); left.style.flex = '1';
+    function suggestionRow(sug, rank) {
+    const row = document.createElement('div'); 
+    row.className = 'row';
+
+    const left = document.createElement('div'); 
+    left.style.flex = '1';
+
     const name = document.createElement('div');
     name.innerHTML = `<strong>${escapeHtml(sug.name)}</strong> <span class="small muted">#${rank} · ${sug.source}${sug.badge ? ' · <span class="tag">must-have</span>' : ''}</span>`;
-    const why  = document.createElement('div'); why.className = 'small'; why.textContent = sug.reason;
-    left.appendChild(name); left.appendChild(why);
 
-    const btn = document.createElement('button');
-    btn.textContent = 'Add';
-    btn.onclick = () => {
+    const why  = document.createElement('div'); 
+    why.className = 'small'; 
+    why.textContent = sug.reason;
+
+    left.appendChild(name); 
+    left.appendChild(why);
+
+    // ---- controls: Explain + Add ----
+    const controls = document.createElement('div');
+    controls.style.display = 'flex'; 
+    controls.style.gap = '8px';
+
+    const btnExplain = document.createElement('button');
+    btnExplain.textContent = 'Explain';
+    btnExplain.title = 'Preview what this means before adding';
+    btnExplain.onclick = () => toggleSuggestExplanation(row, sug);
+
+    const btnAdd = document.createElement('button');
+    btnAdd.textContent = 'Add';
+    btnAdd.onclick = () => {
       addNodeToGraph(sug.name);
       try { KB.core.log('node_added_from_suggest', { id: sug.id, name: sug.name, source: sug.source, rank }); } catch {}
-      renderSuggest(false); renderPrune(false);
+      renderSuggest(false); 
+      renderPrune(false);
     };
 
-    row.appendChild(left); row.appendChild(btn);
+    controls.appendChild(btnExplain);
+    controls.appendChild(btnAdd);
+
+    // inline explanation panel (hidden by default)
+    const expl = document.createElement('div');
+    expl.className = 'small';
+    expl.style.display = 'none';
+    expl.style.marginTop = '6px';
+    expl.style.padding = '8px';
+    expl.style.border = '1px solid #2e3a46';
+    expl.style.borderRadius = '6px';
+    expl.style.background = '#0e1620';
+    expl.setAttribute('data-explain-pane', '1');
+
+    left.appendChild(controls);
+    left.appendChild(expl);
+
+    row.appendChild(left);
     return row;
   }
+
+// toggles inline explanation for a suggestion row (robust: resolve → entry.description|comms|why)
+function toggleSuggestExplanation(rowEl, sug) {
+  const pane = rowEl.querySelector('[data-explain-pane]');
+  if (!pane) return;
+
+  // If already loaded once, just toggle visibility
+  if (pane.dataset.loaded === '1') {
+    pane.style.display = (pane.style.display === 'none') ? '' : 'none';
+    return;
+  }
+
+  // Prefer resolving by NAME (more canonical), then fallback to ID
+  let res = KB.core.resolve?.(sug.name);
+  if (!res?.entry && sug.id) res = KB.core.resolve?.(sug.id);
+
+  const e = res?.entry || null;
+  const text =
+    (e?.description && String(e.description).trim()) ||
+    (e?.comms && String(e.comms).trim()) ||
+    (e?.why && String(e.why).trim()) ||
+    'No explanation available for this suggestion.';
+  const sev  = (e?.severity ? String(e.severity).toLowerCase() : 'unknown');
+
+  pane.textContent = `${text} · severity: ${sev}`;
+  pane.dataset.loaded = '1';
+  pane.style.display = '';
+
+  try { KB.core.log('suggest_explain_preview', { id: e?.id || res?.id || sug.id || null, name: e?.name || sug.name }); } catch {}
+
+  // Debug hint if still empty, so you can see what failed
+  if (!e) console.warn('[suggest:explain] No KB entry resolved for', sug);
+}
+
+
 
   function addNodeToGraph(label) {
     const Rect = joint.shapes?.standard?.Rectangle || joint.shapes?.basic?.Rect;
@@ -143,6 +215,7 @@
       bottom: { position: { name: 'bottom' }, attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } }
     }, items: [{group:'left'},{group:'right'},{group:'top'},{group:'bottom'}]});
     el.addTo(G);
+    window.autoSizeElement?.(el);
   }
 
   /* ---------------- Prune ---------------- */
@@ -242,16 +315,22 @@
       return;
     }
 
-    // Leaf explanation
-    const info = KB.core.explain(label);
-    const card = document.createElement('div'); card.className = 'card';
-    card.innerHTML = `
-      <div class="title">${escapeHtml(info.title)} <span class="tag">${escapeHtml(info.severity)}</span></div>
-      <div class="body">${escapeHtml(info.summary)}</div>
-      ${info.why ? `<div class="small muted">Why shown: ${escapeHtml(info.why)}</div>` : ''}
-    `;
-    box.appendChild(card);
-    try { KB.core.log('explain_view', { name: info.title }); } catch {}
+   // Leaf explanation
+const raw = KB.core.explain?.(label) || {};
+const title = raw.title || raw.name || label;
+const sev   = raw.severity ? String(raw.severity).toLowerCase() : 'unknown';
+const body  = raw.summary || raw.description || 'No explanation available for this item.';
+const why   = raw.why;
+
+const card = document.createElement('div'); card.className = 'card';
+card.innerHTML = `
+  <div class="title">${escapeHtml(title)} <span class="tag">${escapeHtml(sev)}</span></div>
+  <div class="body">${escapeHtml(body)}</div>
+  ${why ? `<div class="small muted">Why shown: ${escapeHtml(why)}</div>` : ''}
+`;
+box.appendChild(card);
+try { KB.core.log('explain_view', { name: title }); } catch {}
+
   }
 
   /* ---------------- helpers ---------------- */

@@ -1,8 +1,6 @@
 // js/study.js — Start Session → brief (plain text) → Baseline → Assist flow,
-// snapshots (tree_v1/tree_v2), JSONL logger, panel priming, and bottom-right Scenario Guide.
-// BOTH the brief modal and the Scenario Guide show the SAME plain-text narrative
-// from scenario JSON (guideText preferred, else brief). In 'sandbox' mode, no fetch;
-// show a generic exam-style statement instead.
+// snapshots (before/after/final), JSONL logger, panel priming, bottom-right Scenario Guide.
+// All saved filenames include PARTICIPANT_ID + SCENARIO + STAGE for easier bookkeeping.
 
 (function () {
   /* ---------------- constants ---------------- */
@@ -12,6 +10,56 @@
     "You can start with any realistic goal (e.g., “Access a user account” or “View camera feed”), then add steps. " +
     "Use OR for alternative paths and AND when all listed steps are required. " +
     "When ready, you can enable assistance to see suggestions, pruning flags, and explanations.";
+
+  /* ---------------- utility: safe names ---------------- */
+  function safeSlug(s, fallback = 'anon') {
+    const t = String(s || '').trim();
+    return t ? t.replace(/[^\w\-]+/g, '_') : fallback;
+  }
+  function nowIsoSafe() {
+    return new Date().toISOString().replace(/[:.]/g, '-');
+  }
+  function namingParts() {
+    const s = window.__kbSession || {};
+    return {
+      pid: safeSlug(s.participant_id, 'anon'),
+      scen: safeSlug(s.scenario_id || (getCfg().experiment?.scenario) || 'scen', 'scen'),
+      ts: nowIsoSafe()
+    };
+  }
+
+  /* ---------------- seed goal as root ---------------- */
+  // Seed the canvas with the scenario goal as the root (if not already present)
+  function ensureRootGoal(goalLabel) {
+    if (!goalLabel || !window.graph) return;
+    const els = window.graph.getElements?.() || [];
+    const exists = els.some(e => (e.attr?.('label/text') || '').trim().toLowerCase() === goalLabel.trim().toLowerCase());
+    if (exists) return;
+
+    const Rect = joint.shapes?.standard?.Rectangle || joint.shapes?.basic?.Rect;
+    if (!Rect) return;
+
+    const el = new Rect();
+    el.resize(200, 44);
+    el.attr({
+      body:  { fill: '#1f2937', stroke: '#6b7280', strokeWidth: 2, magnet: 'passive' },
+      label: { text: goalLabel, fill: '#fff' }
+    });
+    el.position(160, 120);
+    // add ports like other nodes
+    el.set('ports', { groups: {
+      left:   { position: { name: 'left' },   attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
+      right:  { position: { name: 'right' },  attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
+      top:    { position: { name: 'top' },    attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
+      bottom: { position: { name: 'bottom' }, attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } }
+    }, items: [{group:'left'},{group:'right'},{group:'top'},{group:'bottom'}]});
+    el.addTo(window.graph);
+    window.autoSizeElement?.(el);
+
+    // make it the current selection context for Suggest/Explain
+    try { document.dispatchEvent(new CustomEvent('kb:selection', { detail: { parent: goalLabel } })); } catch {}
+    try { KB.core.log('goal_seeded', { goal: goalLabel }); } catch {}
+  }
 
   /* ---------------- logger (JSONL in memory) ---------------- */
   const LOG = [];
@@ -62,10 +110,10 @@
     }, 0);
   }
 
-  // ---- Tree image export (PNG with participant id) ----
-  async function downloadTreeImageForSession() {
-    const pid = (window.__kbSession?.participant_id || 'session').replace(/[^\w\-]+/g, '_');
-    await exportPaperPNG(`${pid}.png`);
+  // ---- Tree image export (PNG with participant/scenario/stage) ----
+  async function downloadTreeImageForSession(stage = 'current') {
+    const { pid, scen } = namingParts();
+    await exportPaperPNG(`${pid}__${scen}__${stage}.png`);
   }
 
   function exportPaperPNG(filename) {
@@ -196,13 +244,18 @@
   }
 
   /* ---------------- snapshots & priming ---------------- */
-  function snapshotTree(suffix) {
+  function snapshotTree(stageLabel) {
     try {
-      const s = window.__kbSession || {};
       const json = window.graph?.toJSON();
       if (!json) throw new Error("no graph");
-      const safeSid = (s.session_id || nowIso()).replace(/[:.]/g, "-");
-      const name = `tree_${suffix}_${s.scenario_id || "scen"}_${safeSid}.json`;
+      const { pid, scen, ts } = namingParts();
+      // Normalize stage labels (keep backwards compatibility if legacy tokens passed)
+      const stageMap = {
+        'v1': 'before_assist',
+        'v2': 'after_assist'
+      };
+      const stage = stageMap[stageLabel] || stageLabel || 'snapshot';
+      const name = `${pid}__${scen}__${stage}__${ts}.json`;
       saveFile(name, new Blob([JSON.stringify(json, null, 2)], { type: "application/json" }));
       return name;
     } catch (e) {
@@ -251,19 +304,27 @@
         js = { brief: "Build an attack tree for the given objective." };
       }
 
-      // Plain text narrative for BOTH panels
+      // Plain text narrative for BOTH panels (+ show goal at top if present)
       const plain = getScenarioPlainText(js);
       const briefText = document.getElementById("brief-text");
       if (briefText) {
         briefText.style.whiteSpace = "pre-wrap"; // preserve line breaks
-        briefText.textContent = plain;
+        briefText.textContent = (js.goal ? `Goal (root): ${js.goal}\n\n` : "") + plain;
       }
       setScenarioGuideFromJson(js);
 
       window.__scenarioJson = js;
 
       if (js && js.aliases) {
-        try { KB.core.addScenarioAliases(js.aliases); KB.core.log('aliases_loaded', { count: Object.keys(js.aliases).length }); } catch(e) { console.warn(e); }
+        try {
+          KB.core.addScenarioAliases(js.aliases);
+          KB.core.log('aliases_loaded', { count: Object.keys(js.aliases).length });
+        } catch(e) { console.warn(e); }
+      }
+
+      // Seed the root goal node (no effect in sandbox)
+      if (js && js.goal) {
+        ensureRootGoal(js.goal);
       }
 
       // Enter baseline phase
@@ -282,10 +343,10 @@
       };
     }
 
-    // Switch to ASSIST: snapshot v1, enable assistant, prime panels
+    // Switch to ASSIST: snapshot BEFORE, enable assistant, prime panels
     if (btnStartAssist) {
       btnStartAssist.onclick = () => {
-        const snap = snapshotTree("v1");
+        const snap = snapshotTree("before_assist");
         if (snap) {
           push("baseline_end", { snapshot: snap });
           window.__studyPhase = "assist";
@@ -297,10 +358,10 @@
       };
     }
 
-    // Finish ASSIST: snapshot v2
+    // Finish ASSIST: snapshot AFTER
     if (btnFinishAssist) {
       btnFinishAssist.onclick = () => {
-        const snap = snapshotTree("v2");
+        const snap = snapshotTree("after_assist");
         if (snap) {
           push("assist_end", { snapshot: snap });
           alert("Final snapshot saved. You can now run the quiz or end the session.");
@@ -308,21 +369,23 @@
       };
     }
 
-    // Download log (JSONL) + PNG of current tree
+    // Download log (JSONL) + PNG of current tree (stage-aware)
     if (btnDownloadLog) {
       btnDownloadLog.onclick = async () => {
-        const s = window.__kbSession || {};
-        const safeSid = (s.session_id || nowIso()).replace(/[:.]/g, "-");
-        const name = `log_${s.scenario_id || "scen"}_${safeSid}.jsonl`;
+        const { pid, scen, ts } = namingParts();
+        const logName = `${pid}__${scen}__session_log__${ts}.jsonl`;
         const lines = LOG.map((o) => JSON.stringify(o)).join("\n") + "\n";
-        saveFile(name, new Blob([lines], { type: "application/x-ndjson" }));
+        saveFile(logName, new Blob([lines], { type: "application/x-ndjson" }));
 
-        // also save an image of the current tree as PARTICIPANTID.png (or .svg fallback)
-        await downloadTreeImageForSession();
+        // also save an image of the current tree with stage
+        const stage = (window.__studyPhase === 'assist')
+          ? 'assist_current'
+          : (window.__studyPhase === 'baseline' ? 'baseline_current' : 'final');
+        await downloadTreeImageForSession(stage);
       };
     }
 
-    // End session: offer final snapshot, download log, and PNG; then reset UI
+    // End session: optional FINAL snapshot, then optional log+PNG, reset UI
     if (btnEndSession) {
       btnEndSession.onclick = async () => {
         try { push('session_ui_end_click', {}); } catch {}
@@ -335,15 +398,14 @@
 
         const wantLog = confirm('Download the session log (.jsonl) now?');
         if (wantLog) {
-          const s = window.__kbSession || {};
-          const safeSid = (s.session_id || new Date().toISOString()).replace(/[:.]/g, '-');
-          const name = `log_${s.scenario_id || 'scen'}_${safeSid}.jsonl`;
+          const { pid, scen, ts } = namingParts();
+          const logName = `${pid}__${scen}__session_log__${ts}.jsonl`;
           const lines = LOG.map(o => JSON.stringify(o)).join('\n') + '\n';
           const blob = new Blob([lines], { type: 'application/x-ndjson' });
-          (window.Utils?.saveFile ? Utils.saveFile : ((n, b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0); }))(name, blob);
+          (window.Utils?.saveFile ? Utils.saveFile : ((n, b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = n; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0); }))(logName, blob);
 
-          // also save an image of the current tree
-          await downloadTreeImageForSession();
+          // also save an image of the current tree as FINAL
+          await downloadTreeImageForSession('final');
         }
 
         // Clear canvas & session; return to Start Session

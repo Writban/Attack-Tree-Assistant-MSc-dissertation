@@ -1,12 +1,44 @@
 {
   "id": "checkout",
-  "name": "E-commerce Checkout",
+  "name": "Checkout / E-commerce Fraud",
   "goal": "Receive goods without paying",
-  "brief": "Card payments, order creation, and fulfillment via web/API.",
-  "guideText": "An online shop allows customers to log in, save their card details for future purchases, apply discount or referral codes at checkout, and qualify for free shipping if the basket exceeds a given amount. Orders can be delivered to home addresses or to pickup lockers. The returns policy permits refunds for orders reported as not received after a short investigation.\n\nYour task: describe how a dishonest user could receive a £50–£100 item without actually paying for it. Consider realistic user behaviour and store policies; you do not need to assume deep software flaws or inside help.\n\nAssumptions:\n• Some customers save valid cards on their account.\n• Discount and referral codes sometimes stack in unintended ways.\n• Locker pickup points are accessible to anyone with the collection code.\n• The store may rate-limit login attempts and use basic fraud checks.\n\nModel the situation as an attack tree from the goal (“Receive goods without paying”) down to concrete actions or conditions.",
-  "gold_must_have": ["Card Testing", "Negative Pricing / Quantity Logic Abuse", "Insecure Direct Object Reference on Orders"],
-  "gold_low_value": ["Physical POS Skimmer (out of scope)"],
-  "quiz": [
-    {"q":"What is card testing?","correct":"Trying many small transactions to validate stolen cards","choices":["Refunding purchases","Testing coupons","Trying many small transactions to validate stolen cards"]}
-  ]
+  "brief": "Goal: Receive goods without paying.\n\nA small online shop sells physical and digital goods. Customers can save cards to their accounts for faster checkout. There are referral and discount codes. Order pages are accessible after purchase, and order numbers look like simple increasing IDs (e.g., 102314). Fraud controls exist but are imperfect.\n\nTask: Build an attack tree showing realistic ways someone could end up with goods or monetary value without legitimate payment. Use OR for alternatives and AND when multiple steps must all happen.\n\nAssumptions:\n• External attacker using a normal browser (no deep system hacking needed).\n• Some customers reuse passwords on multiple sites.\n• The shop may have common issues (weak promo checks, loose refund flow, guessable order IDs).",
+  "guideText": "Goal (root): Receive goods without paying.\n\nContext:\n• Accounts may have saved payment cards.\n• Discount/referral codes exist and may stack incorrectly.\n• Order pages use numeric IDs; some information may be visible from a guessable link.\n• Digital goods (e.g., license keys, downloads) deliver instantly after checkout.\n• Refund/dispute-handling can be abused (e.g., chargebacks, support-issued refunds).\n\nModel routes in plain English. Examples of realistic branches:\n• Use someone else’s account or card on file (e.g., reused passwords, password reset to take over account).\n• Exploit promo/referral logic (stack codes, reuse single-use codes across accounts).\n• Exploit order ID predictability to obtain goods or info that enables free access.\n• Abuse refund or chargeback paths to keep value after receiving goods.\n\nOut of scope: breaking crypto, malware, DDoS, deep infrastructure compromise.",
+  "gold_must_have": [
+    "credential reuse or reset then place order",
+    "abuse discounts or referrals to reduce price to zero",
+    "guess or reuse order id to access value",
+    "refund or chargeback abuse after receiving goods"
+  ],
+  "gold_low_value": [
+    "ddos the site",
+    "steal database backups",
+    "hardware tampering of payment terminals"
+  ],
+  "aliases": {
+    "credential reuse or reset then place order": [
+      "use leaked password",
+      "guess password",
+      "reset their password then log in",
+      "account takeover place order"
+    ],
+    "abuse discounts or referrals to reduce price to zero": [
+      "promo stacking",
+      "coupon glitch",
+      "multiple referrals same user",
+      "discount abuse to zero"
+    ],
+    "guess or reuse order id to access value": [
+      "predict order link",
+      "view someone else’s order",
+      "order idor",
+      "guess order number"
+    ],
+    "refund or chargeback abuse after receiving goods": [
+      "charge back after delivery",
+      "friendly fraud",
+      "refund abuse",
+      "dispute to keep item"
+    ]
+  }
 }

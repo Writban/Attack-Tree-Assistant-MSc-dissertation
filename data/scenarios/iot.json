@@ -1,11 +1,36 @@
 {
   "id": "iot",
-  "name": "Smart Thermostat",
-  "brief": "Local pairing + cloud control with firmware updates.",
-  "guideText": "A smart home camera streams live video to a mobile app and stores short clips in the cloud. When the phone is on the same home Wi-Fi, the app may also use a simple local interface for low-latency streaming. The camera is installed by a typical household and connected to their home Wi-Fi network.\n\nYour task: describe how a person who is not the owner could view the camera’s live feed for several minutes without being noticed. Think about everyday weaknesses rather than deep technical flaws.\n\nAssumptions:\n• The camera account uses email + password; some users reuse passwords across services.\n• The home Wi-Fi uses a printed passphrase on the router; some households never change defaults. WPS may be enabled.\n• Some cameras expose a basic local stream or admin page on the home network if credentials are weak or unchanged.\n• No physical theft or damage of the device.\n\nModel the situation as an attack tree from the goal (“View live camera feed”) down to concrete actions or conditions.",
-  "gold_must_have": ["Default Credentials","Firmware Update Interception"],
-  "gold_low_value": ["TEMPEST Side-channel (out of scope)"],
-  "quiz": [
-    {"q":"Why are default credentials risky?","correct":"They allow easy unauthorized access if unchanged","choices":["They slow devices","They drain battery","They allow easy unauthorized access if unchanged"]}
-  ]
+  "name": "IoT Camera Local Access",
+  "goal": "View live camera feed",
+  "brief": "Goal: View live camera feed without permission.\n\nA home security camera can be viewed from a mobile app (cloud) and also exposes a local web/RTSP stream when you’re on the home Wi-Fi. Many users never change factory settings.\n\nTask: Build an attack tree that shows realistic ways to view the live feed. Use OR for alternatives and AND when multiple conditions must all be true.\n\nAssumptions:\n• Attacker is nearby and can try to join the home Wi-Fi.\n• The camera may still have default admin credentials or a simple stream key.\n• UPnP or port-forwarding may expose services accidentally.",
+  "guideText": "Goal (root): View live camera feed.\n\nContext:\n• Local web UI / RTSP stream exists on the LAN.\n• Some cameras ship with default admin credentials (admin/admin or printed on sticker).\n• Wi-Fi password may be weak, reused, or shared widely.\n• Router settings (UPnP) may expose camera to the internet without the owner realizing.\n\nModel routes like:\n• Join the home Wi-Fi (e.g., weak password guess, shared guest pass) AND open the local camera page/RTSP.\n• Use default/weak camera credentials on the local page to see the feed.\n• If exposed to the internet by UPnP, access the camera remotely with default/weak creds or a simple stream key.\n\nOut of scope: advanced radio attacks, custom firmware, physical theft of the camera.",
+  "gold_must_have": [
+    "join home wifi then browse local camera",
+    "use default or weak camera password",
+    "remote access via upnp/port forward plus weak auth"
+  ],
+  "gold_low_value": [
+    "ddos the camera",
+    "break home router crypto",
+    "reverse engineer firmware"
+  ],
+  "aliases": {
+    "join home wifi then browse local camera": [
+      "connect to wifi then open camera page",
+      "on wifi view rtsp stream",
+      "join network and view camera"
+    ],
+    "use default or weak camera password": [
+      "default admin",
+      "password is admin",
+      "weak camera password",
+      "printed sticker password"
+    ],
+    "remote access via upnp/port forward plus weak auth": [
+      "internet exposed camera",
+      "router upnp exposure",
+      "open port to camera",
+      "port forward camera weak password"
+    ]
+  }
 }

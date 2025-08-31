@@ -25,7 +25,7 @@
   // Minimal categories for AND-misuse detection
 const CATS = {
   // credential acquisition alternatives
-  'CS': 'credential_acquisition',
+  'credential_stuffing': 'credential_acquisition',
   'password_spraying': 'credential_acquisition',
   'phishing_credentials': 'credential_acquisition',
   // recovery flow
@@ -270,6 +270,8 @@ const CATS = {
     return { top, more, parentId, parentLabel };
   };
 
+
+
   /* ---------------- helpers: graph topology ---------------- */
   function gateChildren(graph, el) {
     try {
@@ -288,109 +290,164 @@ const CATS = {
     try { return graph.getConnectedLinks(el).length; } catch { return 0; }
   }
 
-  /* ---------------- Prune engine ---------------- */
-  Core.prune = function prune({ graph, scenarioId, maxVisible = CONFIG.prune.maxVisible }) {
-    const elems = graph?.getElements?.() || [];
-    const seenName = new Map(); // canonical -> element id
-    const flags = [];
-    const golds = goldIdSet();
+Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.maxVisible ?? 3) }) {
+  const flags = [];
+  if (!graph) return flags;
 
-    // Structural: orphans, gates with <2 children, gate with 0 children
-    for (const el of elems) {
-      const label = el.attr?.('label/text') || '';
-      const isGate = !!el.get?.('gate');
-      const deg = degree(graph, el);
+  const els = graph.getElements?.() || [];
+  if (!els.length) return flags;
 
-      if (isGate) {
-        const kids = gateChildren(graph, el);
-        if (kids.length === 0) {
-          flags.push({ elementId: el.id, label: label || `${el.get('gate')} gate`,
-            reason: 'Gate has no children — incomplete structure.', score: 0.10 });
-          continue;
-        }
-        if (kids.length === 1) {
-          flags.push({ elementId: el.id, label: label || `${el.get('gate')} gate`,
-            reason: 'Gate has only one child — consider removing the gate or adding another child.', score: 0.20 });
-        }
-        continue; // skip further value checks for gates
-      }
+  // Helpers
+  const linksOf = (el) => graph.getConnectedLinks?.(el) || [];
+  const kidsOf  = (el) => gateChildren(graph, el);
 
-      if (el.get('gate') === 'AND' && kids.length >= 2) {
-  // Look up categories of children
-  const childCats = kids.map(k => {
-    const lbl = k.attr?.('label/text') || '';
-    const id = canonIdFor(lbl);
-    return id ? CATS[id] : null;
-  }).filter(Boolean);
+  const scen = (typeof window !== 'undefined' ? (window.__scenarioJson || {}) : {});
+  const goalText = (scen.goal || '').trim().toLowerCase();
+  const goldIds  = goldIdSet(); // must-haves (protected)
+  const lowVals  = Array.isArray(scen.gold_low_value) ? scen.gold_low_value : [];
 
-  // If two or more children share the same category that's normally alternative, warn once.
-  const altCats = new Set(['credential_acquisition','payment_fraud']);
-  const counts = {};
-  for (const c of childCats) counts[c] = (counts[c] || 0) + 1;
+  // --- 1) Structural flags ---
+  for (const el of els) {
+    const label = el.attr?.('label/text') || '';
+    const isGate = !!el.get?.('gate');
+    const labelN = (label || '').trim().toLowerCase();
 
-  for (const [cat, n] of Object.entries(counts)) {
-    if (altCats.has(cat) && n >= 2) {
-      flags.push({
-        elementId: el.id,
-        label: `${el.get('gate')} gate`,
-        reason: 'This AND groups alternative tactics that usually stand as OR siblings (e.g., multiple ways to get credentials).',
-        score: 0.25
-      });
-      break; // one flag is enough
-    }
-  }
-}
-
-
-      if (deg === 0) {
-        flags.push({ elementId: el.id, label: label || 'node',
-          reason: 'Unlinked node — attach to a parent/child or remove.', score: 0.30 });
-      }
-    }
-
-    // Content-level flags (duplicates, vague/low value), protecting golds
-    for (const el of elems) {
-      if (el.get?.('gate')) continue; // handled above
-      const label = el.attr?.('label/text') || '';
-      if (!label) continue;
-
-      const id = canonIdFor(label);
-      const entry = id ? BY_ID.get(id) : null;
-      const canonKey = norm(entry?.name || label);
-
-      if (id && golds.has(id)) continue; // protect scenario golds
-
-      if (seenName.has(canonKey)) {
-        flags.push({
-          elementId: el.id,
-          label,
-          reason: `Looks like a duplicate of “${graph.getCell(seenName.get(canonKey))?.attr?.('label/text') || entry?.name || label}”.`,
-          score: 0.15
-        });
+    if (isGate) {
+      const kids = kidsOf(el);
+      if (kids.length === 0) {
+        flags.push({ elementId: el.id, label: label || `${el.get('gate')} gate`, reason: 'Gate has no children — incomplete structure.', score: 0.10 });
         continue;
       }
-      seenName.set(canonKey, el.id);
-
-      let keep = entry ? sev(entry.severity) : 0.4;
-      if (entry) keep += inScenario(entry, scenarioId) ? 0.15 : -0.15;
-
-      if (/^(step|task|misc|other|todo|thing|stuff)$/i.test(label.trim())) keep -= 0.25;
-      if (label.trim().length <= 3) keep -= 0.25; // very short/ambiguous
-
-      if (keep < (CONFIG.prune.flagThreshold ?? 0.45)) {
-        flags.push({
-          elementId: el.id,
-          label,
-          reason: entry
-            ? `Low value here given the current scenario and severity (${entry.severity || 'unknown'}).`
-            : 'Unrecognized / vague item may be out of scope.',
-          score: keep
-        });
+      if (kids.length === 1) {
+        flags.push({ elementId: el.id, label: label || `${el.get('gate')} gate`, reason: 'Gate has only one child — add another child or remove the gate.', score: 0.20 });
       }
+
+      // AND misuse: alternative tactics grouped under AND
+      if (el.get('gate') === 'AND' && kids.length >= 2) {
+        const childCats = kids.map(k => {
+          const lbl = k.attr?.('label/text') || '';
+          const id  = canonIdFor(lbl);
+          return id ? CATS[id] : null;
+        }).filter(Boolean);
+
+        const altCats = new Set(['credential_acquisition','payment_fraud']);
+        const counts = {};
+        for (const c of childCats) counts[c] = (counts[c] || 0) + 1;
+
+        for (const [cat, n] of Object.entries(counts)) {
+          if (altCats.has(cat) && n >= 2) {
+            flags.push({
+              elementId: el.id,
+              label: `${el.get('gate')} gate`,
+              reason: 'This AND groups alternatives that usually belong under an OR (e.g., multiple ways to get credentials).',
+              score: 0.25
+            });
+            break;
+          }
+        }
+      }
+      continue; // don’t do content checks on gates
     }
 
-    return flags.sort((a,b) => a.score - b.score).slice(0, maxVisible);
-  };
+    // Orphans (no links)
+    const links = linksOf(el);
+    const out = links.filter(l => l.getSourceElement?.()?.id === el.id || l.get('source')?.id === el.id).length;
+    const inc = links.filter(l => l.getTargetElement?.()?.id === el.id || l.get('target')?.id === el.id).length;
+    if (out === 0 && inc === 0 && labelN !== goalText) {
+      flags.push({ elementId: el.id, label, reason: 'Unlinked node — attach to a parent/child or remove.', score: 0.30 });
+    }
+  }
+
+  // --- 2) Content flags: duplicates / low-value / vague ---
+  // Build seen map for duplicates based on canonical id; fallback to fuzzy if unknown.
+  const seen = new Map(); // key -> elementId
+  function sameConcept(a, b) {
+    // prefer canonical ids
+    const ca = canonIdFor(a), cb = canonIdFor(b);
+    if (ca && cb) return ca === cb;
+    // fallback: token overlap + small edit distance
+    const aTok = tokensOf(a), bTok = tokensOf(b);
+    const overlap = tokenOverlap(aTok, bTok);     // 0..1
+    const dist    = editDistance(norm(a), norm(b));
+    return (overlap >= 0.7) && (dist <= 2);
+  }
+
+  for (const el of els) {
+    if (el.get?.('gate')) continue;                 // only structural on gates
+    const label = el.attr?.('label/text') || '';
+    const labelN = (label || '').trim().toLowerCase();
+    if (!label) continue;
+    if (labelN === goalText) continue;              // never flag the goal
+
+    const id = canonIdFor(label);
+    if (id && goldIds.has(id)) continue;            // protect scenario must-haves
+
+    // Duplicates
+    let dupKey = id ? `id:${id}` : `n:${norm(label)}`;
+    if (seen.size) {
+      for (const [k, firstId] of seen.entries()) {
+        const kLabel = graph.getCell(firstId)?.attr?.('label/text') || '';
+        if (sameConcept(label, kLabel)) { dupKey = k; break; }
+      }
+    }
+    if (seen.has(dupKey)) {
+      const firstLabel = graph.getCell(seen.get(dupKey))?.attr?.('label/text') || '';
+      flags.push({
+        elementId: el.id,
+        label,
+        reason: `Near-duplicate of “${firstLabel}” — consider merging or renaming.`,
+        score: 0.40
+      });
+      continue;
+    }
+    seen.set(dupKey, el.id);
+
+    // Known low-value/distractor (scenario)
+    const isLow = lowVals.some(lv => {
+      const lvId = canonIdFor(lv);
+      if (lvId && id) return lvId === id;
+      return sameConcept(label, lv);
+    });
+    if (isLow) {
+      flags.push({
+        elementId: el.id,
+        label,
+        reason: 'Low-value/distractor for this scenario — consider removing or moving to notes.',
+        score: 0.35
+      });
+      continue;
+    }
+
+    // Vague/generic
+    const toks = tokensOf(label);
+    const tooShort = toks.length < 2; // tunable if you add to CONFIG
+    const generic = /\b(thing|stuff|misc|todo|do attack|hack|bypass|get in|perform attack)\b/i.test(label);
+    if (tooShort || generic) {
+      flags.push({
+        elementId: el.id,
+        label,
+        reason: tooShort
+          ? 'Label is too short/vague — rename to a concrete step.'
+          : 'Generic wording — rename to a specific step for clarity.',
+        score: 0.45
+      });
+    }
+  }
+
+  // Deduplicate flags per element (keep highest severity/lowest score number)
+  const byId = new Map();
+  for (const f of flags) {
+    const prev = byId.get(f.elementId);
+    if (!prev || f.score < prev.score) byId.set(f.elementId, f);
+  }
+  const out = Array.from(byId.values())
+    .sort((a, b) => a.score - b.score)
+    .slice(0, maxVisible);
+
+  Core.log('prune_candidates', { count: out.length });
+  return out;
+};
+
 
   /* ---------------- Explain & resolve ---------------- */
   Core.explain = function explain(label) {
@@ -411,10 +468,6 @@ const CATS = {
     return { title, severity, summary, why };
   };
 
-  Core.resolve = function resolve(label) {
-    const id = canonIdFor(label);
-    return { id, entry: id ? (BY_ID.get(id) || null) : null };
-  };
 
   Core.addScenarioAliases = function(aliasMap) {
   if (!aliasMap) return;
@@ -431,4 +484,193 @@ const CATS = {
 
   /* ---------------- Logging passthrough ---------------- */
   Core.log = function(ev, data) { console.log('[kb]', ev, data || {}); };
+
+  /* =======================================================================
+   v2 Matching & Pruning Upgrade — canonicalizer, fuzzy resolve, dup filter
+   Paste just before the IIFE closes.
+   ======================================================================= */
+
+(function UpgradeMatchingAndPrune() {
+  if (!window.KB || !KB.core) return;
+  const Core = KB.core;
+
+  // ---- config thresholds (fallbacks if not in /data/config.json) ----
+  const cfg = (Core.getConfig && Core.getConfig()) || {};
+  const matchCfg = cfg.matching || {};
+  const T_HIGH = typeof matchCfg.fuzzyThreshold === 'number' ? matchCfg.fuzzyThreshold : 0.85; // "same thing"
+  const T_MED  = (typeof matchCfg.softThreshold === 'number' ? matchCfg.softThreshold : 0.70); // "close enough"
+  const MIN_SCORE = typeof matchCfg.minScore === 'number' ? matchCfg.minScore : 0.35;
+
+  // ---- canonicalization ----
+  const STOP = new Set([
+    'the','a','an','and','or','to','of','for','in','on','with','via','by','from','as',
+    'user','users','account','accounts','system','site','app','application','page','pages',
+    'do','does','make','get','got','have','has','be','is','are','was','were','can','could',
+    'into','out','at','this','that','these','those'
+  ]);
+
+  function norm(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/[_/\\\-]+/g, ' ')
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function stem(tok) {
+    if (tok.length <= 3) return tok;
+    return tok
+      .replace(/(ing|ed|ers|er|ies|s)$/,'')
+      .replace(/(ion|ions)$/,'ion'); // light stem; keeps meaning
+  }
+
+  function tokens(s) {
+    const n = norm(s);
+    return n.split(' ')
+      .filter(Boolean)
+      .map(stem)
+      .filter(t => !STOP.has(t));
+  }
+
+  function trigrams(n) {
+    // n should be normalized (no punctuation)
+    const s = n.replace(/\s+/g,' ');
+    const out = [];
+    for (let i = 0; i < s.length - 2; i++) out.push(s.slice(i, i+3));
+    return out;
+  }
+
+  function jaccard(a, b) {
+    if (!a.length && !b.length) return 1;
+    const A = new Set(a), B = new Set(b);
+    let inter = 0;
+    for (const x of A) if (B.has(x)) inter++;
+    const uni = A.size + B.size - inter;
+    return uni ? inter / uni : 0;
+  }
+
+  function levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    if (!m) return n; if (!n) return m;
+    const dp = new Array(n + 1);
+    for (let j = 0; j <= n; j++) dp[j] = j;
+    for (let i = 1; i <= m; i++) {
+      let prev = dp[0], cur;
+      dp[0] = i;
+      for (let j = 1; j <= n; j++) {
+        cur = dp[j];
+        if (a[i - 1] === b[j - 1]) dp[j] = prev;
+        else dp[j] = Math.min(prev + 1, dp[j] + 1, dp[j - 1] + 1);
+        prev = cur;
+      }
+    }
+    return dp[n];
+  }
+
+  function strSim(aRaw, bRaw) {
+    const aN = norm(aRaw), bN = norm(bRaw);
+    if (!aN && !bN) return 1;
+    const aT = tokens(aRaw), bT = tokens(bRaw);
+    const aG = trigrams(aN), bG = trigrams(bN);
+    const jTok = jaccard(aT, bT);
+    const jTri = jaccard(aG, bG);
+    const lev  = 1 - (levenshtein(aN, bN) / Math.max(aN.length, bN.length, 1));
+    // weighted combo
+    return 0.6 * jTok + 0.3 * jTri + 0.1 * lev;
+  }
+
+  // ---- Build a light index from the internal KB maps (BY_ID etc) ----
+  // Note: We rely on kb-core.js having BY_ID and canonIdFor in scope.
+  // If your file names differ, adjust here.
+  if (typeof BY_ID === 'undefined') {
+    console.warn('[KB] BY_ID map not found; fuzzy index disabled');
+    return;
+  }
+
+  let INDEX = [];
+  function buildIndex() {
+    INDEX = [];
+    BY_ID.forEach((entry, id) => {
+      const name = entry.name || id;
+      const fields = [
+        { kind: 'name', raw: name, n: norm(name), t: tokens(name), g: trigrams(norm(name)) }
+      ];
+      const aliases = Array.isArray(entry.aliases) ? entry.aliases : [];
+      for (const a of aliases) {
+        const an = norm(a);
+        fields.push({ kind: 'alias', raw: a, n: an, t: tokens(a), g: trigrams(an) });
+      }
+      INDEX.push({ id, entry, fields });
+    });
+  }
+  buildIndex();
+
+  function bestMatch(label) {
+    if (!label) return null;
+    // quick exact/id match
+    if (BY_ID.has(label)) return { id: label, entry: BY_ID.get(label), method: 'id', score: 1 };
+    const labelN = norm(label);
+    let best = { id: null, entry: null, method: 'none', score: 0 };
+    for (const item of INDEX) {
+      for (const f of item.fields) {
+        const s = strSim(labelN, f.n);
+        if (s > best.score) best = { id: item.id, entry: item.entry, method: f.kind, score: s };
+        if (best.score >= 0.999) break;
+      }
+    }
+    return best.id ? best : null;
+  }
+
+  // Expose improved resolve/explain
+  Core.resolve = function resolve(idOrName) {
+    if (!idOrName) return null;
+    // exact id or canonical id first if available
+    if (BY_ID.has(idOrName)) return { id: idOrName, entry: BY_ID.get(idOrName), score: 1, method: 'id' };
+    const cid = (typeof canonIdFor === 'function') ? canonIdFor(idOrName) : null;
+    if (cid && BY_ID.has(cid)) return { id: cid, entry: BY_ID.get(cid), score: 1, method: 'canon' };
+    // fuzzy fallback
+    const bm = bestMatch(idOrName);
+    return bm || null;
+  };
+
+  Core.explain = function explain(idOrName) {
+    const res = Core.resolve(idOrName);
+    if (!res || !res.entry) {
+      return { title: String(idOrName || ''), severity: 'unknown', summary: 'No explanation available.' };
+    }
+    const e = res.entry;
+    const title = e.name || res.id;
+    const body  = e.description || e.comms || e.why || 'No explanation available.';
+    const hint  = (res.method === 'alias' || res.method === 'name' || res.score < 1) ? `Closest match: ${title}` : '';
+    return {
+      title, severity: (e.severity || 'unknown'),
+      summary: body + (hint ? `\n\n${hint}` : ''),
+      why: e.why || ''
+    };
+  };
+
+  // ---- Duplicate suppression for Suggest (wrapper, non-invasive) ----
+  const _origSuggest = Core.suggest;
+  Core.suggest = function wrappedSuggest(args) {
+    const out = (_origSuggest && _origSuggest.call(Core, args)) || { top: [], more: [], parentLabel: null };
+    const graph = args && args.graph;
+    const labels = (graph && graph.getElements && graph.getElements().map(e => e.attr && e.attr('label/text')).filter(Boolean)) || [];
+    function isDuplicate(name) {
+      for (const lbl of labels) {
+        const s = strSim(lbl, name);
+        if (s >= T_HIGH) return true;
+      }
+      return false;
+    }
+    out.top  = out.top.filter(s => !isDuplicate(s.name));
+    out.more = out.more.filter(s => !isDuplicate(s.name));
+    return out;
+  };
+
+
+
+  console.info('[KB] v2 matcher/prune enabled (T_HIGH=' + T_HIGH + ', T_MED=' + T_MED + ', minScore=' + MIN_SCORE + ')');
+})();
+
 })();

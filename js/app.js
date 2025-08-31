@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   init().catch(err => { console.error('[FATAL]', err); showFatal(err); });
 });
 
+
+
 const Session = {
   get() { return window.__kbSession || null; },
   set(s) { window.__kbSession = s; },
@@ -18,6 +20,30 @@ async function init() {
   wireUI(graph, paper);
   ensureSessionStart();
 }
+
+// --- text measurement + autosize ---
+(function(){
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  // match your SVG label style (tweak if you changed fonts/sizes)
+  const LABEL_FONT = '14px Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+
+  function measureTextWidth(txt) {
+    try { measureCtx.font = LABEL_FONT; } catch {}
+    return Math.ceil(measureCtx.measureText(String(txt || '')).width);
+  }
+
+  window.autoSizeElement = function autoSizeElement(el) {
+    if (!el || typeof el.attr !== 'function' || typeof el.resize !== 'function') return;
+    const label = el.attr('label/text') || '';
+    const size  = (typeof el.size === 'function' ? el.size() : el.get('size')) || { width: 200, height: 44 };
+    const minW  = 160;           // minimum box width
+    const pad   = 24;            // horizontal padding inside the rect
+    const needed = measureTextWidth(label) + pad * 2;
+    const newW = Math.max(minW, needed);
+    el.resize(newW, size.height);
+  };
+})();
+
 
 /* -------------------- lib loader -------------------- */
 async function ensureLibs() {
@@ -45,6 +71,29 @@ async function safeLoadConfigAndKB() {
 /* -------------------- visuals -------------------- */
 const LINK_COLOR = '#9aa0a6';
 const TARGET_MARKER = { type: 'path', d: 'M 10 -5 L 0 0 L 10 5 z', stroke: LINK_COLOR, fill: LINK_COLOR };
+
+// --- text measurement + autosize (boxes grow to fit label) ---
+(function () {
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  const LABEL_FONT = '14px Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+
+  function measureTextWidth(txt) {
+    try { measureCtx.font = LABEL_FONT; } catch {}
+    return Math.ceil(measureCtx.measureText(String(txt || '')).width);
+  }
+
+  window.autoSizeElement = function autoSizeElement(el) {
+    if (!el || typeof el.attr !== 'function' || typeof el.resize !== 'function') return;
+    const label = el.attr('label/text') || '';
+    const size  = (typeof el.size === 'function' ? el.size() : el.get('size')) || { width: 200, height: 44 };
+    const minW  = 160;   // min box width
+    const pad   = 24;    // left+right text padding inside the rect
+    const needed = measureTextWidth(label) + pad * 2;
+    const newW = Math.max(minW, needed);
+    el.resize(newW, size.height);
+  };
+})();
+
 
 /* -------------------- canvas -------------------- */
 function makeCanvas() {
@@ -118,6 +167,7 @@ function wireUI(graph, paper) {
     rect.position(x, y);
     addPorts(rect);
     rect.addTo(graph);
+    window.autoSizeElement(rect);
     log('node_created', { id: rect.id, label });
     return rect;
   }
@@ -176,6 +226,7 @@ function wireUI(graph, paper) {
     const nv = prompt('New name:', old);
     if (nv && nv.trim()) {
       selectedElement.attr('label/text', nv.trim());
+      window.autoSizeElement?.(selectedElement);
       log('node_renamed', { id: selectedElement.id, from: old, to: nv.trim() });
       try { KB.ui.refreshSelection({ model: selectedElement }); } catch {}
       updateSelLabel();
@@ -256,6 +307,7 @@ function wireUI(graph, paper) {
     const nv = prompt('New name:', old);
     if (nv && nv.trim()) {
       selectedElement.attr('label/text', nv.trim());
+      window.autoSizeElement?.(selectedElement);
       log('node_renamed', { id: selectedElement.id, from: old, to: nv.trim() });
       try { KB.ui.refreshSelection({ model: selectedElement }); } catch {}
       updateSelLabel();
