@@ -1,3 +1,4 @@
+
 // js/study.js — Start Session → brief (plain text) → Baseline → Assist flow,
 // snapshots (before/after/final), JSONL logger, panel priming, bottom-right Scenario Guide.
 // All saved filenames include PARTICIPANT_ID + SCENARIO + STAGE for easier bookkeeping.

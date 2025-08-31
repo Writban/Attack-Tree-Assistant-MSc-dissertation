@@ -1,3 +1,4 @@
+
 // js/app.js — ports drag-to-link, one small arrowhead at TARGET, center/boundary anchoring,
 // pan on blank, add/rename/delete/clear/save/load, session start dialog.
 // RQ1/RQ2 instrumentation: logs manual actions (create/link/rename/delete).
