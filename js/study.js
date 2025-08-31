@@ -1,4 +1,3 @@
-
 // js/study.js — Start Session → brief (plain text) → Baseline → Assist flow,
 // snapshots (before/after/final), JSONL logger, panel priming, bottom-right Scenario Guide.
 // All saved filenames include PARTICIPANT_ID + SCENARIO + STAGE for easier bookkeeping.
@@ -283,46 +282,6 @@
     const chip = document.getElementById("study-toolbar");
     chip?.classList.remove("hidden");
     initScenarioHelpToggle();
-
-    // Add a "Save tree now" button next to the existing toolbar buttons
-const tb = document.getElementById("study-toolbar");
-if (tb && window.graph) {
-  const btnQuick = document.createElement('button');
-  btnQuick.textContent = 'Save tree now';
-  btnQuick.onclick = () => {
-    const s = window.__kbSession || {};
-    const pid = (s.participant_id || 'session').replace(/[^\w\-]+/g, '_');
-    const scen = s.scenario_id || 'scen';
-    const phase = (window.__studyPhase === 'assist') ? 'during_assist'
-                 : (window.__studyPhase === 'baseline') ? 'before_assist' : 'unspecified';
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const name = `${pid}__${scen}__${phase}__${ts}.json`;
-    const blob = new Blob([JSON.stringify(window.graph.toJSON(), null, 2)], { type: 'application/json' });
-    (window.Utils?.saveFile ? Utils.saveFile : ((n,b)=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=n; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},0); }))(name, blob);
-  };
-  tb.appendChild(btnQuick);
-}
-
-// Lightweight autosave to localStorage (restored if you reload)
-(function autosave() {
-  if (!window.graph) return;
-  const KEY = 'kb_autosave_graph';
-  const save = (_.throttle ? _.throttle(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(window.graph.toJSON())); } catch {}
-  }, 1000) : () => { try { localStorage.setItem(KEY, JSON.stringify(window.graph.toJSON())); } catch {} });
-
-  window.graph.on('add remove change:position change:attrs', save);
-
-  // Restore if canvas is empty
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw && (!window.graph.getElements?.().length)) {
-      window.graph.fromJSON(JSON.parse(raw));
-      try { KB.core.log('autosave_restored', { nodes: window.graph.getElements().length }); } catch {}
-    }
-  } catch {}
-})();
-
 
     const scenSpan = document.getElementById("study-scenario");
     const btnStartAssist = document.getElementById("btn-start-assist");

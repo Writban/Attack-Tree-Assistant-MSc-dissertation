@@ -1,4 +1,3 @@
-
 // js/app.js — ports drag-to-link, one small arrowhead at TARGET, center/boundary anchoring,
 // pan on blank, add/rename/delete/clear/save/load, session start dialog.
 // RQ1/RQ2 instrumentation: logs manual actions (create/link/rename/delete).
@@ -188,8 +187,6 @@ function wireUI(graph, paper) {
     return gate;
   }
 
-  
-
   // selection
   let selectedElement = null;
   let selectedLink = null;
@@ -260,10 +257,6 @@ function wireUI(graph, paper) {
 
   // select link
   paper.on('link:pointerdown', (view) => { selectedLink = view.model; selectedElement = null; updateSelLabel(); });
-
-
-  enablePanZoom(paper);
-enableAutoResize(paper, graph);
 
   // ----- pan on blank drag -----
   paper.on('blank:pointerdown', (evt, x, y) => {
@@ -398,55 +391,4 @@ function ensureSessionStart() {
 
   if (startBtn) startBtn.onclick = start;
   if (!window.__kbSession) modal.classList.remove('hidden');
-
-  function enablePanZoom(paper) {
-  let scale = 1, MIN = 0.25, MAX = 2.5;
-  const svg = paper.svg || paper.el.querySelector('svg');
-
-  svg.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const f = e.deltaY < 0 ? 1.1 : 0.9;
-    scale = Math.max(MIN, Math.min(MAX, scale * f));
-    paper.scale(scale, scale);
-  }, { passive: false });
-
-  let panning = false, last = { x: 0, y: 0 };
-  svg.addEventListener('mousedown', (e) => {
-    // middle-mouse or empty-space drag to pan
-    const targetIsNode = e.target.closest('.joint-element');
-    if (e.button === 1 || (!targetIsNode && e.button === 0)) {
-      panning = true; last = { x: e.clientX, y: e.clientY }; svg.style.cursor = 'grab';
-      e.preventDefault();
-    }
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!panning) return;
-    const tr = paper.translate();
-    paper.translate(tr.tx + (e.clientX - last.x), tr.ty + (e.clientY - last.y));
-    last = { x: e.clientX, y: e.clientY };
-  });
-  window.addEventListener('mouseup', () => { panning = false; svg.style.cursor = ''; });
-}
-
-function enableAutoResize(paper, graph) {
-  const M = 400; // margin around content
-  const fit = () => {
-    const els = graph.getElements?.() || [];
-    if (!els.length) return;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const el of els) {
-      const p = el.position(); const s = el.size();
-      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x + s.width); maxY = Math.max(maxY, p.y + s.height);
-    }
-    const w = Math.max(paper.options.width || 1200, (maxX - minX) + M * 2);
-    const h = Math.max(paper.options.height || 700,  (maxY - minY) + M * 2);
-    paper.setDimensions(w, h);
-  };
-  const fitThrottled = (_.throttle ? _.throttle(fit, 200) : fit);
-  graph.on('add remove change:position change:size', fitThrottled);
-  window.addEventListener('resize', fitThrottled);
-  setTimeout(fit, 0);
-}
-
 }
