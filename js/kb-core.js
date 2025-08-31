@@ -606,6 +606,55 @@ Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.max
   }
   buildIndex();
 
+  // --- put inside UpgradeMatchingAndPrune(), after buildIndex() ---
+
+// Top-k closest KB entries for an arbitrary label (no hard threshold)
+Core.closest = function closest(label, k = 3) {
+  if (!label) return [];
+  const labelN = norm(label);
+  const scored = INDEX.map(item => {
+    let s = 0;
+    for (const f of item.fields) {
+      const sf = strSim(labelN, f.n);
+      if (sf > s) s = sf;
+    }
+    return { id: item.id, entry: item.entry, score: s };
+  }).sort((a, b) => b.score - a.score);
+  return scored.slice(0, k);
+};
+
+// Always give an explanation. If we only have a fuzzy hit, include a hint.
+Core.explain = function explain(idOrName) {
+  // exact id?
+  if (BY_ID.has(idOrName)) {
+    const e = BY_ID.get(idOrName);
+    return { title: e.name || e.id, severity: e.severity || 'unknown',
+             summary: e.description || e.comms || e.why || 'No explanation available.' };
+  }
+  // canonical?
+  const cid = (typeof canonIdFor === 'function') ? canonIdFor(idOrName) : null;
+  if (cid && BY_ID.has(cid)) {
+    const e = BY_ID.get(cid);
+    return { title: e.name || cid, severity: e.severity || 'unknown',
+             summary: e.description || e.comms || e.why || 'No explanation available.' };
+  }
+  // fuzzy fallback
+  const [best, ...rest] = Core.closest(idOrName, 3);
+  if (best && best.entry) {
+    const body = best.entry.description || best.entry.comms || best.entry.why || 'No explanation available.';
+    const hint = `Closest match (${Math.round(best.score * 100)}%): ${best.entry.name || best.id}`;
+    return {
+      title: String(idOrName || ''),
+      severity: best.entry.severity || 'unknown',
+      summary: `${body}\n\n${hint}`,
+      why: 'Fuzzy matched',
+      candidates: [best, ...rest]
+    };
+  }
+  return { title: String(idOrName || ''), severity: 'unknown', summary: 'No explanation available.' };
+};
+
+
   function bestMatch(label) {
     if (!label) return null;
     // quick exact/id match
