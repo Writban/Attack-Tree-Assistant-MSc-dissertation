@@ -136,3 +136,35 @@ svg g.link-tools, svg g.tools { display: none !important; }
 .modal-card { max-height: 70vh; overflow: auto; }
 .help .help-body { width: 480px; max-height: 70vh; }
 .help .help-content { white-space: pre-wrap; }
+
+/* severity badge look & feel */
+.sev{
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:600;
+  margin-left:8px;
+  line-height:1.6;
+  border:1px solid transparent;
+}
+.sev-low{
+  background:#0c3b2e;
+  color:#34d399;
+  border-color:#065f46;
+}
+.sev-medium{
+  background:#3b2f0c;
+  color:#fbbf24;
+  border-color:#92400e;
+}
+.sev-high{
+  background:#3b0c0c;
+  color:#f87171;
+  border-color:#991b1b;
+}
+.sev-unknown{
+  background:#1f2937;
+  color:#9ca3af;
+  border-color:#374151;
+}

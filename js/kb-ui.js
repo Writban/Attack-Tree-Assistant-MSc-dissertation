@@ -40,7 +40,10 @@
     // initial paint
     renderSuggest(false); renderPrune(false); renderExplain();
     // recalc prune on graph changes
-    G.on('change add remove', _.throttle(() => renderPrune(true), 300));
+    // Recalc prune on *any* meaningful graph mutation
+G.on('add remove change', _.throttle(() => renderPrune(true), 150));
+// Also refresh after a full import/reset (e.g., Load)
+G.on('reset', () => renderPrune(true));
   };
 
   function scenarioId() { return (window.__kbSession && window.__kbSession.scenario_id) || null; }
@@ -219,58 +222,98 @@ function toggleSuggestExplanation(rowEl, sug) {
   }
 
   /* ---------------- Prune ---------------- */
-  function renderPrune(emitLog) {
-    const box = document.getElementById('tab-review');
-    if (!box) return;
-    box.innerHTML = '';
+/* ---------------- Prune ---------------- */
+function renderPrune(emitLog) {
+  const box = document.getElementById('tab-review');
+  if (!box) return;
+  box.innerHTML = '';
 
-    const scen = scenarioId();
-    const flags = KB.core.prune({ graph: G, scenarioId: scen });
+  const scen = scenarioId();
+  // Ask core for many, we’ll page locally (so more can bubble up immediately).
+  const flagsAll = KB.core.prune({ graph: G, scenarioId: scen, maxVisible: 999 });
 
-    // RQ2 cooldown: suppress items the participant already kept
-    const filtered = flags.filter(f => !KEPT.has((f.label || '').toLowerCase()));
+  // RQ2 cooldown: suppress items the participant already kept
+  const flags = flagsAll.filter(f => !KEPT.has((f.label || '').toLowerCase()));
 
-    const hdr = document.createElement('div'); hdr.className = 'card';
-    hdr.innerHTML = `<div class="title">Review (prune candidates)</div>`;
-    box.appendChild(hdr);
+  const hdr = document.createElement('div'); hdr.className = 'card';
+  hdr.innerHTML = `<div class="title">Review (prune candidates)</div>`;
+  box.appendChild(hdr);
 
-    if (!filtered.length) {
-      const empty = document.createElement('div'); empty.className = 'small';
-      empty.textContent = 'No pruning suggestions right now.';
-      hdr.appendChild(empty);
-      return;
-    }
-
-    filtered.forEach(flag => {
-      if (emitLog) try { KB.core.log('prune_flag_shown', { label: flag.label, reason: flag.reason, score: Number(flag.score?.toFixed?.(3) || flag.score) }); } catch {}
-      const row = document.createElement('div'); row.className = 'row';
-      const left = document.createElement('div'); left.style.flex = '1';
-      const title = document.createElement('div'); title.innerHTML = `<strong>${escapeHtml(flag.label)}</strong>`;
-      const why = document.createElement('div'); why.className = 'small'; why.textContent = flag.reason;
-      left.appendChild(title); left.appendChild(why);
-
-      const keep = document.createElement('button'); keep.textContent = 'Keep';
-      keep.onclick = () => {
-        KEPT.add((flag.label || '').toLowerCase()); // cooldown
-        try { KB.core.log('prune_keep', { label: flag.label }); } catch {}
-        renderPrune(false);
-      };
-
-      const del = document.createElement('button'); del.textContent = 'Remove'; del.style.marginLeft = '6px';
-      del.onclick = () => {
-        const el = G.getCell(flag.elementId);
-        if (!el) return;
-        try { (G.getConnectedLinks(el) || []).forEach(l => l.remove()); } catch {}
-        el.remove();
-        try { KB.core.log('prune_remove', { label: flag.label }); } catch {}
-        renderPrune(false); renderSuggest(false);
-      };
-
-      const btns = document.createElement('div'); btns.appendChild(keep); btns.appendChild(del);
-      row.appendChild(left); row.appendChild(btns);
-      box.appendChild(row);
-    });
+  if (!flags.length) {
+    const empty = document.createElement('div'); empty.className = 'small';
+    empty.textContent = 'No pruning suggestions right now.';
+    hdr.appendChild(empty);
+    return;
   }
+
+  const VISIBLE = 5;
+  const top  = flags.slice(0, VISIBLE);
+  const more = flags.slice(VISIBLE);
+
+  const makeRow = (flag) => {
+    if (emitLog) try {
+      KB.core.log('prune_flag_shown', {
+        label: flag.label,
+        reason: flag.reason,
+        score: Number(flag.score?.toFixed?.(3) || flag.score)
+      });
+    } catch {}
+
+    const row  = document.createElement('div'); row.className = 'row';
+    const left = document.createElement('div'); left.style.flex = '1';
+    const title = document.createElement('div'); title.innerHTML = `<strong>${escapeHtml(flag.label)}</strong>`;
+    const why   = document.createElement('div');  why.className = 'small'; why.textContent = flag.reason;
+    left.appendChild(title); left.appendChild(why);
+
+    const keep = document.createElement('button'); keep.textContent = 'Keep';
+    keep.onclick = () => {
+      KEPT.add((flag.label || '').toLowerCase());           // cooldown this label
+      try { KB.core.log('prune_keep', { label: flag.label }); } catch {}
+      renderPrune(false);                                   // reveal next candidates
+    };
+
+    const del = document.createElement('button'); del.textContent = 'Remove'; del.style.marginLeft = '6px';
+    del.onclick = () => {
+      const el = G.getCell(flag.elementId);
+      if (!el) return;
+      try { (G.getConnectedLinks(el) || []).forEach(l => l.remove()); } catch {}
+      el.remove();
+      try { KB.core.log('prune_remove', { label: flag.label }); } catch {}
+      renderPrune(false);                                   // list updates immediately
+      renderSuggest(false);                                 // suggestions may change
+    };
+
+    const btns = document.createElement('div'); btns.appendChild(keep); btns.appendChild(del);
+    row.appendChild(left); row.appendChild(btns);
+    return row;
+  };
+
+  top.forEach(f => box.appendChild(makeRow(f)));
+
+  if (more.length) {
+    const moreWrap = document.createElement('details');
+    const sum = document.createElement('summary');
+    sum.textContent = `Show ${more.length} more prune candidates`;
+    moreWrap.appendChild(sum);
+
+    const moreList = document.createElement('div');
+    more.forEach(f => moreList.appendChild(makeRow(f)));
+    moreWrap.appendChild(moreList);
+
+    box.appendChild(moreWrap);
+  }
+}
+
+
+  // map raw severity -> human label + colored class
+function severityMeta(raw) {
+  const s = String(raw || '').toLowerCase();
+  if (s === 'high')   return { cls: 'sev sev-high',   text: 'High severity' };
+  if (s === 'medium') return { cls: 'sev sev-medium', text: 'Medium severity' };
+  if (s === 'low')    return { cls: 'sev sev-low',    text: 'Low severity' };
+  return { cls: 'sev sev-unknown', text: 'Severity unknown' };
+}
+
 
   /* ---------------- Explain ---------------- */
   function renderExplain() {
@@ -315,21 +358,26 @@ function toggleSuggestExplanation(rowEl, sug) {
       return;
     }
 
-   // Leaf explanation
+// Leaf explanation (with colored severity badge)
 const raw = KB.core.explain?.(label) || {};
 const title = raw.title || raw.name || label;
-const sev   = raw.severity ? String(raw.severity).toLowerCase() : 'unknown';
+const sm    = severityMeta(raw.severity); // <-- use your helper
 const body  = raw.summary || raw.description || 'No explanation available for this item.';
 const why   = raw.why;
 
-const card = document.createElement('div'); card.className = 'card';
+const card = document.createElement('div'); 
+card.className = 'card';
 card.innerHTML = `
-  <div class="title">${escapeHtml(title)} <span class="tag">${escapeHtml(sev)}</span></div>
+  <div class="title">
+    ${escapeHtml(title)}
+    <span class="${sm.cls}">${escapeHtml(sm.text)}</span>
+  </div>
   <div class="body">${escapeHtml(body)}</div>
   ${why ? `<div class="small muted">Why shown: ${escapeHtml(why)}</div>` : ''}
 `;
 box.appendChild(card);
 try { KB.core.log('explain_view', { name: title }); } catch {}
+
 
   }
 

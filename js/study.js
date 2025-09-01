@@ -309,7 +309,7 @@
       const briefText = document.getElementById("brief-text");
       if (briefText) {
         briefText.style.whiteSpace = "pre-wrap"; // preserve line breaks
-        briefText.textContent = (js.goal ? `Goal (root): ${js.goal}\n\n` : "") + plain;
+        briefText.textContent =  plain;
       }
       setScenarioGuideFromJson(js);
 
@@ -325,6 +325,9 @@
       // Seed the root goal node (no effect in sandbox)
       if (js && js.goal) {
         ensureRootGoal(js.goal);
+        // Let core know the scenario goal for explain/prune protection
+try { KB.core.registerScenarioGoal(js.goal, js); } catch {}
+
       }
 
       // Enter baseline phase

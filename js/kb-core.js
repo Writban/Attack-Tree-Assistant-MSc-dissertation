@@ -179,6 +179,29 @@ const CATS = {
     }
   };
 
+  Core.loadExtraAliases = async function loadExtraAliases() {
+  try {
+    const res = await fetch('data/aliases_extra.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const map = await res.json();
+    for (const [alias, canonical] of Object.entries(map)) {
+      // resolve canonical to an id via name/alias/canon
+      const id = (function () {
+        if (BY_ID.has(canonical)) return canonical;
+        const k = (typeof norm === 'function') ? norm(canonical) : String(canonical).toLowerCase().trim();
+        return ALIAS.get(k) || CANON.get(k) || null;
+      })();
+      if (!id) continue;
+      const k = (typeof norm === 'function') ? norm(alias) : String(alias).toLowerCase().trim();
+      if (k && !ALIAS.has(k)) ALIAS.set(k, id);
+    }
+    console.log('[kb-core] extra aliases loaded:', Object.keys(map).length);
+  } catch (e) {
+    console.warn('[kb-core] extra aliases load failed', e);
+  }
+};
+
+
   /* ---------------- existing tree introspection ---------------- */
   Core.treeCanonSet = function treeCanonSet(graph) {
     const s = new Set();
@@ -191,6 +214,62 @@ const CATS = {
     } catch {}
     return s;
   };
+
+  /* ---------- Robust matching helpers (exact → alias → token-set → soft) ---------- */
+
+// thresholds (can be overridden via /data/config.json › matching)
+const MATCH = {
+  fuzzyHigh: 0.88,   // ≥ this → treat as the same thing
+  fuzzySoft: 0.72    // ≥ this → close enough to explain / not prune
+};
+
+// simple token-set ratio (ignores order, squashes duplicates)
+function tokenSetRatio(a, b) {
+  const ta = new Set((a || '').toLowerCase().replace(/[^a-z0-9 ]+/g,' ').split(/\s+/).filter(Boolean));
+  const tb = new Set((b || '').toLowerCase().replace(/[^a-z0-9 ]+/g,' ').split(/\s+/).filter(Boolean));
+  if (!ta.size || !tb.size) return 0;
+  const inter = [...ta].filter(x => tb.has(x)).length;
+  const prec  = inter / ta.size;
+  const rec   = inter / tb.size;
+  return (2 * prec * rec) / Math.max(prec + rec, 1e-9); // F1 in [0..1]
+}
+
+// normalized edit-similarity in [0..1]
+function editSim(a, b) {
+  const x = (a || '').toLowerCase(), y = (b || '').toLowerCase();
+  const d = (typeof editDistance === 'function') ? editDistance(x, y) : Math.abs(x.length - y.length);
+  const m = Math.max(1, x.length, y.length);
+  return 1 - (d / m);
+}
+
+// combined soft similarity using token-set (orderless) + edit similarity
+function softSim(a, b) {
+  return 0.7 * tokenSetRatio(a, b) + 0.3 * editSim(a, b);
+}
+
+// best match across KB names + aliases
+function bestKBMatch(label, BY_ID, CANON, ALIAS) {
+  if (!label) return null;
+
+  // 1) exact: id or canonical/alias key
+  if (BY_ID.has(label)) return { id: label, entry: BY_ID.get(label), method: 'id', score: 1 };
+
+  const k = (typeof norm === 'function') ? norm(label) : String(label).toLowerCase().trim();
+  if (ALIAS.has(k)) return { id: ALIAS.get(k), entry: BY_ID.get(ALIAS.get(k)), method: 'alias-key', score: 1 };
+  if (CANON.has(k)) return { id: CANON.get(k), entry: BY_ID.get(CANON.get(k)), method: 'canon-key', score: 1 };
+
+  // 2) soft search over names + aliases
+  let best = { id: null, entry: null, method: 'soft', score: 0, matched: '' };
+  BY_ID.forEach((entry, id) => {
+    const terms = [entry.name || id, ...(entry.aliases || [])];
+    for (const t of terms) {
+      const s = softSim(label, t);
+      if (s > best.score) best = { id, entry, method: 'soft', score: s, matched: t };
+    }
+  });
+  return best.id ? best : null;
+}
+
 
   /* ---------------- Suggest engine ---------------- */
   Core.suggest = function suggest({ graph, parentLabel, scenarioId, limitTop = CONFIG.suggest.topK, limitMore = CONFIG.suggest.moreK }) {
@@ -290,27 +369,64 @@ const CATS = {
     try { return graph.getConnectedLinks(el).length; } catch { return 0; }
   }
 
-Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.maxVisible ?? 3) }) {
+/* ---------- Prune (structural + unknown/content) ---------- */
+/* ---------- Prune (structural + unknown/content, now with dynamic domain) ---------- */
+/* ---------------- Prune (goal-protected, severity-aware) ---------------- */
+Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.maxVisible ?? 5) }) {
   const flags = [];
   if (!graph) return flags;
 
   const els = graph.getElements?.() || [];
   if (!els.length) return flags;
 
-  // Helpers
+  // helpers
   const linksOf = (el) => graph.getConnectedLinks?.(el) || [];
-  const kidsOf  = (el) => gateChildren(graph, el);
+  const kidsOf  = (el) => {
+    try {
+      const links = graph.getConnectedLinks(el, { outbound: true }) || [];
+      const kids = [];
+      for (const l of links) {
+        const tgtId = l.get('target')?.id;
+        if (!tgtId) continue;
+        const t = graph.getCell(tgtId);
+        if (t?.isElement?.()) kids.push(t);
+      }
+      return kids;
+    } catch { return []; }
+  };
 
+  // scenario metadata
   const scen = (typeof window !== 'undefined' ? (window.__scenarioJson || {}) : {});
   const goalText = (scen.goal || '').trim().toLowerCase();
-  const goldIds  = goldIdSet(); // must-haves (protected)
+  const goldIds  = (function goldIdSet() {
+    const arr = Array.isArray(scen?.gold_must_have) ? scen.gold_must_have : [];
+    const set = new Set();
+    for (const name of arr) { const id = (typeof canonIdFor === 'function') ? canonIdFor(name) : null; if (id) set.add(id); }
+    return set;
+  })();
   const lowVals  = Array.isArray(scen.gold_low_value) ? scen.gold_low_value : [];
+
+  // quick unrelated heuristic tokens used only when KB doesn’t recognize the label
+  const SEC_TOKENS = [
+    'password','credential','login','mfa','reset','phish','token','session','sql','xss','csrf',
+    'privilege','escalation','idor','access','api','email','link','payment','checkout','card',
+    'wifi','rtsp','camera','stream','default','admin','bucket','s3','key','cookie','otp','code'
+  ];
+
+  function looksUnrelated(label) {
+    const s = String(label || '').toLowerCase();
+    if (!s || s.length < 3) return true;
+    return !SEC_TOKENS.some(t => s.includes(t));
+  }
 
   // --- 1) Structural flags ---
   for (const el of els) {
     const label = el.attr?.('label/text') || '';
     const isGate = !!el.get?.('gate');
     const labelN = (label || '').trim().toLowerCase();
+
+    // never flag scenario goal
+    if (labelN === goalText || KB.core.isScenarioGoal(label)) continue;
 
     if (isGate) {
       const kids = kidsOf(el);
@@ -321,74 +437,55 @@ Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.max
       if (kids.length === 1) {
         flags.push({ elementId: el.id, label: label || `${el.get('gate')} gate`, reason: 'Gate has only one child — add another child or remove the gate.', score: 0.20 });
       }
-
-      // AND misuse: alternative tactics grouped under AND
-      if (el.get('gate') === 'AND' && kids.length >= 2) {
-        const childCats = kids.map(k => {
-          const lbl = k.attr?.('label/text') || '';
-          const id  = canonIdFor(lbl);
-          return id ? CATS[id] : null;
-        }).filter(Boolean);
-
-        const altCats = new Set(['credential_acquisition','payment_fraud']);
-        const counts = {};
-        for (const c of childCats) counts[c] = (counts[c] || 0) + 1;
-
-        for (const [cat, n] of Object.entries(counts)) {
-          if (altCats.has(cat) && n >= 2) {
-            flags.push({
-              elementId: el.id,
-              label: `${el.get('gate')} gate`,
-              reason: 'This AND groups alternatives that usually belong under an OR (e.g., multiple ways to get credentials).',
-              score: 0.25
-            });
-            break;
-          }
-        }
-      }
-      continue; // don’t do content checks on gates
+      // optional AND misuse (same as before, keep if you had it)
+      continue; // skip content checks on gates
     }
 
-    // Orphans (no links)
+    // Orphans
     const links = linksOf(el);
     const out = links.filter(l => l.getSourceElement?.()?.id === el.id || l.get('source')?.id === el.id).length;
     const inc = links.filter(l => l.getTargetElement?.()?.id === el.id || l.get('target')?.id === el.id).length;
-    if (out === 0 && inc === 0 && labelN !== goalText) {
+    if (out === 0 && inc === 0) {
       flags.push({ elementId: el.id, label, reason: 'Unlinked node — attach to a parent/child or remove.', score: 0.30 });
     }
   }
 
-  // --- 2) Content flags: duplicates / low-value / vague ---
-  // Build seen map for duplicates based on canonical id; fallback to fuzzy if unknown.
-  const seen = new Map(); // key -> elementId
+  // --- 2) Content flags (duplicates / low-value / unrecognized) ---
+  const seen = new Map(); // canonical key -> elementId
   function sameConcept(a, b) {
-    // prefer canonical ids
-    const ca = canonIdFor(a), cb = canonIdFor(b);
+    const ca = (typeof canonIdFor === 'function') ? canonIdFor(a) : null;
+    const cb = (typeof canonIdFor === 'function') ? canonIdFor(b) : null;
     if (ca && cb) return ca === cb;
     // fallback: token overlap + small edit distance
-    const aTok = tokensOf(a), bTok = tokensOf(b);
-    const overlap = tokenOverlap(aTok, bTok);     // 0..1
-    const dist    = editDistance(norm(a), norm(b));
-    return (overlap >= 0.7) && (dist <= 2);
+    const to = (s) => String(s||'').toLowerCase().replace(/[_\-]+/g,' ').replace(/[^a-z0-9 ]+/g,' ').trim().split(/\s+/);
+    const A = new Set(to(a)), B = new Set(to(b));
+    let inter = 0; for (const t of A) if (B.has(t)) inter++;
+    const overlap = inter / Math.max(1, A.size, B.size);
+    const dist = (a,b) => { const x=String(a||''), y=String(b||''); const m=x.length, n=y.length; if(!m) return n; if(!n) return m; const dp=new Array(n+1); for(let j=0;j<=n;j++) dp[j]=j; for(let i=1;i<=m;i++){ let prev=dp[0]; dp[0]=i; for(let j=1;j<=n;j++){ const cur=dp[j]; dp[j]=(x[i-1]===y[j-1])?prev:Math.min(prev+1, dp[j]+1, dp[j-1]+1); prev=cur; }} return dp[n]; };
+    return overlap >= 0.7 && dist(a,b) <= 2;
   }
 
   for (const el of els) {
-    if (el.get?.('gate')) continue;                 // only structural on gates
+    if (el.get?.('gate')) continue;
+
     const label = el.attr?.('label/text') || '';
-    const labelN = (label || '').trim().toLowerCase();
     if (!label) continue;
-    if (labelN === goalText) continue;              // never flag the goal
+    if (KB.core.isScenarioGoal(label)) continue;
 
-    const id = canonIdFor(label);
-    if (id && goldIds.has(id)) continue;            // protect scenario must-haves
+    const labelN = label.trim().toLowerCase();
+    if (labelN === goalText) continue;
 
-    // Duplicates
-    let dupKey = id ? `id:${id}` : `n:${norm(label)}`;
-    if (seen.size) {
-      for (const [k, firstId] of seen.entries()) {
-        const kLabel = graph.getCell(firstId)?.attr?.('label/text') || '';
-        if (sameConcept(label, kLabel)) { dupKey = k; break; }
-      }
+    const id = (typeof canonIdFor === 'function') ? canonIdFor(label) : null;
+    const entry = id ? (BY_ID.get(id) || null) : null;
+
+    // Protect scenario must-haves
+    if (id && goldIds.has(id)) continue;
+
+    // Duplicates (by canonical id or near-dupe)
+    let dupKey = id ? `id:${id}` : `n:${labelN}`;
+    for (const [k, firstId] of seen.entries()) {
+      const kLabel = graph.getCell(firstId)?.attr?.('label/text') || '';
+      if (sameConcept(label, kLabel)) { dupKey = k; break; }
     }
     if (seen.has(dupKey)) {
       const firstLabel = graph.getCell(seen.get(dupKey))?.attr?.('label/text') || '';
@@ -402,9 +499,22 @@ Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.max
     }
     seen.set(dupKey, el.id);
 
-    // Known low-value/distractor (scenario)
+    // If recognized & relevant & not low severity, DO NOT FLAG
+    if (entry) {
+      const sev = String(entry.severity || '').toLowerCase();
+      const relevant = (function inScenario(entry, scenId) {
+        if (!scenId || scenId === 'sandbox') return true;
+        const list = entry.scenarios || [];
+        return list.includes(scenId);
+      })(entry, scenarioId);
+      if (relevant && (sev === 'high' || sev === 'medium')) {
+        continue; // recognized and valuable
+      }
+    }
+
+    // Scenario-declared low-value/distractor items
     const isLow = lowVals.some(lv => {
-      const lvId = canonIdFor(lv);
+      const lvId = (typeof canonIdFor === 'function') ? canonIdFor(lv) : null;
       if (lvId && id) return lvId === id;
       return sameConcept(label, lv);
     });
@@ -418,35 +528,41 @@ Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.max
       continue;
     }
 
-    // Vague/generic
-    const toks = tokensOf(label);
-    const tooShort = toks.length < 2; // tunable if you add to CONFIG
-    const generic = /\b(thing|stuff|misc|todo|do attack|hack|bypass|get in|perform attack)\b/i.test(label);
-    if (tooShort || generic) {
+    // Unrecognized / unrelated — heuristic
+    if (!entry && looksUnrelated(label)) {
       flags.push({
         elementId: el.id,
         label,
-        reason: tooShort
-          ? 'Label is too short/vague — rename to a concrete step.'
-          : 'Generic wording — rename to a specific step for clarity.',
+        reason: 'This item doesn’t look related to the security objective — likely out of scope.',
+        score: 0.55
+      });
+      continue;
+    }
+
+    // Very vague
+    const tokCount = String(label).trim().split(/\s+/).filter(Boolean).length;
+    if (tokCount < 2 || /\b(thing|stuff|misc|todo|attack|hack)\b/i.test(label)) {
+      flags.push({
+        elementId: el.id,
+        label,
+        reason: 'Too generic — rename to a specific, concrete step.',
         score: 0.45
       });
     }
   }
 
-  // Deduplicate flags per element (keep highest severity/lowest score number)
+  // Merge flags per element, keep the strongest (lowest score)
   const byId = new Map();
   for (const f of flags) {
     const prev = byId.get(f.elementId);
     if (!prev || f.score < prev.score) byId.set(f.elementId, f);
   }
-  const out = Array.from(byId.values())
-    .sort((a, b) => a.score - b.score)
-    .slice(0, maxVisible);
-
-  Core.log('prune_candidates', { count: out.length });
-  return out;
+  return Array.from(byId.values()).sort((a,b) => a.score - b.score).slice(0, maxVisible);
 };
+
+
+
+
 
 
   /* ---------------- Explain & resolve ---------------- */
@@ -480,6 +596,24 @@ Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.max
     const k = String(alias || '').toLowerCase().replace(/[_\-]+/g,' ').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
     if (k && !ALIAS.has(k)) ALIAS.set(k, id);
   }
+};
+/* ---------------- Scenario Goal helpers ---------------- */
+let __SCEN_GOAL_LABEL = null;
+let __SCEN_GOAL_EXPLAIN = '';
+
+function isSameLabel(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+}
+
+KB.core.registerScenarioGoal = function registerScenarioGoal(goalLabel, scenarioJson) {
+  __SCEN_GOAL_LABEL = (goalLabel || '').trim();
+  __SCEN_GOAL_EXPLAIN =
+    (scenarioJson && (scenarioJson.goal_explain || scenarioJson.guideText || scenarioJson.brief)) || '';
+};
+
+KB.core.isScenarioGoal = function isScenarioGoal(label) {
+  if (!__SCEN_GOAL_LABEL) return false;
+  return isSameLabel(label, __SCEN_GOAL_LABEL);
 };
 
   /* ---------------- Logging passthrough ---------------- */
@@ -625,34 +759,22 @@ Core.closest = function closest(label, k = 3) {
 
 // Always give an explanation. If we only have a fuzzy hit, include a hint.
 Core.explain = function explain(idOrName) {
-  // exact id?
-  if (BY_ID.has(idOrName)) {
-    const e = BY_ID.get(idOrName);
-    return { title: e.name || e.id, severity: e.severity || 'unknown',
-             summary: e.description || e.comms || e.why || 'No explanation available.' };
+  const res = Core.resolve(idOrName);
+  if (!res || !res.entry) {
+    return { title: String(idOrName || ''), severity: 'unknown', summary: 'No explanation available.' };
   }
-  // canonical?
-  const cid = (typeof canonIdFor === 'function') ? canonIdFor(idOrName) : null;
-  if (cid && BY_ID.has(cid)) {
-    const e = BY_ID.get(cid);
-    return { title: e.name || cid, severity: e.severity || 'unknown',
-             summary: e.description || e.comms || e.why || 'No explanation available.' };
-  }
-  // fuzzy fallback
-  const [best, ...rest] = Core.closest(idOrName, 3);
-  if (best && best.entry) {
-    const body = best.entry.description || best.entry.comms || best.entry.why || 'No explanation available.';
-    const hint = `Closest match (${Math.round(best.score * 100)}%): ${best.entry.name || best.id}`;
-    return {
-      title: String(idOrName || ''),
-      severity: best.entry.severity || 'unknown',
-      summary: `${body}\n\n${hint}`,
-      why: 'Fuzzy matched',
-      candidates: [best, ...rest]
-    };
-  }
-  return { title: String(idOrName || ''), severity: 'unknown', summary: 'No explanation available.' };
+  const e = res.entry;
+  const title = e.name || res.id;
+  const body  = e.lay_explain || e.description || e.comms || e.why || 'No explanation available.';
+  const hint  = (res.method !== 'id' && res.score < 1) ? `Closest match: ${title}` : '';
+  return {
+    title,
+    severity: (e.severity || 'unknown'),
+    summary: body + (hint ? `\n\n${hint}` : ''),
+    why: e.why || ''
+  };
 };
+
 
 
   function bestMatch(label) {
@@ -671,33 +793,56 @@ Core.explain = function explain(idOrName) {
     return best.id ? best : null;
   }
 
-  // Expose improved resolve/explain
-  Core.resolve = function resolve(idOrName) {
-    if (!idOrName) return null;
-    // exact id or canonical id first if available
-    if (BY_ID.has(idOrName)) return { id: idOrName, entry: BY_ID.get(idOrName), score: 1, method: 'id' };
-    const cid = (typeof canonIdFor === 'function') ? canonIdFor(idOrName) : null;
-    if (cid && BY_ID.has(cid)) return { id: cid, entry: BY_ID.get(cid), score: 1, method: 'canon' };
-    // fuzzy fallback
-    const bm = bestMatch(idOrName);
-    return bm || null;
-  };
+/* ---------- Resolve & Explain (uses robust matching) ---------- */
+Core.resolve = function resolve(idOrName) {
+  // honor ids and your canonicalizer first
+  if (BY_ID.has(idOrName)) return { id: idOrName, entry: BY_ID.get(idOrName), score: 1, method: 'id' };
+  const cid = (typeof canonIdFor === 'function') ? canonIdFor(idOrName) : null;
+  if (cid && BY_ID.has(cid)) return { id: cid, entry: BY_ID.get(cid), score: 1, method: 'canon' };
 
-  Core.explain = function explain(idOrName) {
-    const res = Core.resolve(idOrName);
-    if (!res || !res.entry) {
-      return { title: String(idOrName || ''), severity: 'unknown', summary: 'No explanation available.' };
-    }
-    const e = res.entry;
-    const title = e.name || res.id;
-    const body  = e.description || e.comms || e.why || 'No explanation available.';
-    const hint  = (res.method === 'alias' || res.method === 'name' || res.score < 1) ? `Closest match: ${title}` : '';
+  // robust soft match
+  const m = bestKBMatch(idOrName, BY_ID, CANON, ALIAS);
+  if (!m) return null;
+
+  // allow config override for thresholds
+  try {
+    const cfg = KB.core.getConfig?.() || {};
+    if (cfg.matching?.fuzzyThreshold) MATCH.fuzzyHigh = cfg.matching.fuzzyThreshold;
+    if (cfg.matching?.softThreshold)  MATCH.fuzzySoft = cfg.matching.softThreshold;
+  } catch {}
+
+  return m;
+};
+
+/* ---------------- Explain (goal-aware) ---------------- */
+Core.explain = function explain(label) {
+  // 1) Scenario goal: always explain
+  if (KB.core.isScenarioGoal(label)) {
+    const title = `Goal: ${__SCEN_GOAL_LABEL}`;
+    const summary = __SCEN_GOAL_EXPLAIN
+      ? String(__SCEN_GOAL_EXPLAIN).trim()
+      : 'This is the root objective for the scenario.';
+    return { title, severity: 'info', summary, why: 'Root objective' };
+  }
+
+  // 2) KB-backed items
+  const id = (typeof canonIdFor === 'function') ? canonIdFor(label) : null;
+  if (!id) {
     return {
-      title, severity: (e.severity || 'unknown'),
-      summary: body + (hint ? `\n\n${hint}` : ''),
-      why: e.why || ''
+      title: label || '—',
+      severity: 'unknown',
+      summary: 'No specific entry found in the knowledge base for this label.'
     };
-  };
+  }
+  const e = BY_ID.get(id) || {};
+  const title = e.name || label;
+  const severity = e.severity || 'unknown';
+  const summary = e.description || e.comms || 'This item appears in the KB but lacks a narrative.';
+  const why = e.why || '';
+  return { title, severity, summary, why };
+};
+
+
 
   // ---- Duplicate suppression for Suggest (wrapper, non-invasive) ----
   const _origSuggest = Core.suggest;

@@ -1,12 +1,10 @@
 // js/app.js — ports drag-to-link, one small arrowhead at TARGET, center/boundary anchoring,
-// pan on blank, add/rename/delete/clear/save/load, session start dialog.
+// smooth pan + zoom (no hard borders), add/rename/delete/clear/save/load, session start dialog.
 // RQ1/RQ2 instrumentation: logs manual actions (create/link/rename/delete).
 
 document.addEventListener('DOMContentLoaded', () => {
   init().catch(err => { console.error('[FATAL]', err); showFatal(err); });
 });
-
-
 
 const Session = {
   get() { return window.__kbSession || null; },
@@ -20,30 +18,6 @@ async function init() {
   wireUI(graph, paper);
   ensureSessionStart();
 }
-
-// --- text measurement + autosize ---
-(function(){
-  const measureCtx = document.createElement('canvas').getContext('2d');
-  // match your SVG label style (tweak if you changed fonts/sizes)
-  const LABEL_FONT = '14px Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
-
-  function measureTextWidth(txt) {
-    try { measureCtx.font = LABEL_FONT; } catch {}
-    return Math.ceil(measureCtx.measureText(String(txt || '')).width);
-  }
-
-  window.autoSizeElement = function autoSizeElement(el) {
-    if (!el || typeof el.attr !== 'function' || typeof el.resize !== 'function') return;
-    const label = el.attr('label/text') || '';
-    const size  = (typeof el.size === 'function' ? el.size() : el.get('size')) || { width: 200, height: 44 };
-    const minW  = 160;           // minimum box width
-    const pad   = 24;            // horizontal padding inside the rect
-    const needed = measureTextWidth(label) + pad * 2;
-    const newW = Math.max(minW, needed);
-    el.resize(newW, size.height);
-  };
-})();
-
 
 /* -------------------- lib loader -------------------- */
 async function ensureLibs() {
@@ -66,6 +40,9 @@ function ensureScript(testFn, url, name) {
 async function safeLoadConfigAndKB() {
   try { await KB.core.loadConfig(); } catch (e) { console.warn('[INIT] config load failed:', e); }
   try { await KB.core.loadKB(); } catch (e) { console.warn('[INIT] KB load failed:', e); }
+
+  try { await KB.core.loadExtraAliases?.(); } catch (e) { console.warn('[INIT] extra aliases load failed:', e); }
+
 }
 
 /* -------------------- visuals -------------------- */
@@ -76,24 +53,21 @@ const TARGET_MARKER = { type: 'path', d: 'M 10 -5 L 0 0 L 10 5 z', stroke: LINK_
 (function () {
   const measureCtx = document.createElement('canvas').getContext('2d');
   const LABEL_FONT = '14px Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
-
   function measureTextWidth(txt) {
     try { measureCtx.font = LABEL_FONT; } catch {}
     return Math.ceil(measureCtx.measureText(String(txt || '')).width);
   }
-
   window.autoSizeElement = function autoSizeElement(el) {
     if (!el || typeof el.attr !== 'function' || typeof el.resize !== 'function') return;
     const label = el.attr('label/text') || '';
     const size  = (typeof el.size === 'function' ? el.size() : el.get('size')) || { width: 200, height: 44 };
     const minW  = 160;   // min box width
-    const pad   = 24;    // left+right text padding inside the rect
+    const pad   = 24;    // left+right padding for text
     const needed = measureTextWidth(label) + pad * 2;
     const newW = Math.max(minW, needed);
     el.resize(newW, size.height);
   };
 })();
-
 
 /* -------------------- canvas -------------------- */
 function makeCanvas() {
@@ -144,6 +118,28 @@ function wireUI(graph, paper) {
   // Simple logger passthrough for RQ1/RQ2
   const log = (ev, data) => { try { KB?.core?.log?.(ev, data || {}); } catch {} };
 
+  // ---- Selection highlight (red outline) ----
+let __highlighted = null;
+
+function setHighlight(el, on) {
+  if (!el) return;
+  const isGate = !!el.get?.('gate');
+  if (isGate) {
+    el.attr('body/stroke', on ? '#ef4444' : '#60a5fa');
+    el.attr('body/strokeWidth', on ? 3 : 2);
+  } else {
+    el.attr('body/stroke', on ? '#ef4444' : '#6b7280');
+    el.attr('body/strokeWidth', on ? 3 : 2);
+  }
+}
+
+function selectElement(el) {
+  if (__highlighted && __highlighted !== el) setHighlight(__highlighted, false);
+  __highlighted = el || null;
+  if (__highlighted) setHighlight(__highlighted, true);
+}
+
+
   // ---- Ports on all 4 sides ----
   const PORT_GROUPS = {
     left:   { position: { name: 'left'   }, attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
@@ -191,12 +187,92 @@ function wireUI(graph, paper) {
   let selectedElement = null;
   let selectedLink = null;
 
-  // panning on blank
+  /* ---------- Smooth Panning & Zoom (single state; no redeclare) ---------- */
   const pc = document.getElementById('paper-container');
-  let isPanning = false;
-  let panStart = { x: 0, y: 0 };
-  let panOrigin = { x: 0, y: 0 };
+  pc.style.touchAction = 'none'; // allow pinch/trackpad zoom
 
+  const pan = {
+    active: false,
+    startClient: { x: 0, y: 0 },
+    startOrigin: { x: 0, y: 0 }
+  };
+
+  // current translation (origin) and scale
+  let SCALE = 1;
+  const MIN_SCALE = 0.2;
+  const MAX_SCALE = 2.5;
+
+  // Utility: get current translate()
+  function currentOrigin() {
+    const t = (paper.translate && paper.translate()) || { tx: 0, ty: 0 };
+    return { x: t.tx || 0, y: t.ty || 0 };
+  }
+
+  // Keep the point under the cursor stable while zooming
+  function zoomAt(clientX, clientY, nextScale) {
+    nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
+    const rect = pc.getBoundingClientRect();
+    const cx = clientX - rect.left;
+    const cy = clientY - rect.top;
+
+    const origin = currentOrigin();
+    // world coords under cursor before scaling
+    const wx = (cx - origin.x) / SCALE;
+    const wy = (cy - origin.y) / SCALE;
+
+    SCALE = nextScale;
+    paper.scale(SCALE, SCALE);
+
+    // translate so that (wx, wy) remains under the cursor
+    const nx = cx - wx * SCALE;
+    const ny = cy - wy * SCALE;
+    paper.translate(nx, ny);
+  }
+
+  // start pan on blank
+  paper.on('blank:pointerdown', (evt) => { selectElement(null);
+
+    // clear selection
+    selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
+
+    const o = currentOrigin();
+    pan.startOrigin = { x: o.x, y: o.y };
+    pan.startClient = { x: evt.clientX, y: evt.clientY };
+    pan.active = true;
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+  });
+
+  // document-level move/up = smooth drag even if cursor leaves canvas
+  function onDocMove(evt) {
+    if (!pan.active) return;
+    evt.preventDefault?.();
+    const dx = evt.clientX - pan.startClient.x;
+    const dy = evt.clientY - pan.startClient.y;
+    paper.translate(pan.startOrigin.x + dx, pan.startOrigin.y + dy);
+  }
+  function onDocUp() {
+    if (!pan.active) return;
+    pan.active = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  }
+  document.addEventListener('mousemove', onDocMove, { passive: false });
+  document.addEventListener('mouseup', onDocUp, { passive: false });
+
+  // Wheel to zoom (Ctrl/Cmd or trackpad pinch)
+  pc.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return; // regular scroll to page; Ctrl/⌘ => zoom canvas
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    zoomAt(e.clientX, e.clientY, SCALE * factor);
+  }, { passive: false });
+
+  // block default context menu (we right-drag to pan too if desired)
+  pc.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  /* ---------------- element/link interactions ---------------- */
   const $ = (id) => document.getElementById(id);
   const btnNew   = $('btn-new');
   const btnAdd   = $('btn-add');
@@ -213,13 +289,15 @@ function wireUI(graph, paper) {
     $('sel-label').textContent = label ? `Selected: ${label}` : 'No selection';
   }
 
-  // ----- element interactions -----
   paper.on('element:pointerdown', (view) => {
-    selectedElement = view.model; selectedLink = null;
+    selectedElement = view.model; 
+    selectElement(selectedElement);
+selectedLink = null;
     try { KB.ui.refreshSelection(view); } catch {}
     document.dispatchEvent(new CustomEvent('kb:selection', { detail: { parent: selectedElement.attr('label/text') || '' } }));
     updateSelLabel();
   });
+
   paper.on('element:pointerdblclick', (view) => {
     selectedElement = view.model;
     const old = selectedElement.attr('label/text') || '';
@@ -233,7 +311,7 @@ function wireUI(graph, paper) {
     }
   });
 
-  // ----- link created: center anchors, boundary connection, single arrow at TARGET -----
+  // Link created: center anchors, boundary connection, single arrow at TARGET
   paper.on('link:connect', (linkView) => {
     const m = linkView.model;
     const srcEl = m.getSourceElement();
@@ -249,50 +327,66 @@ function wireUI(graph, paper) {
     if (typeof linkView.update === 'function') linkView.update();
     if (typeof m.toFront === 'function') m.toFront();
 
-    // RQ1/RQ2: log link creation (for parsimony/structure diffs)
+    // log link creation
     const sLabel = srcEl?.attr?.('label/text') || (srcEl?.get?.('gate') ? `${srcEl.get('gate')} gate` : 'node');
     const tLabel = tgtEl?.attr?.('label/text') || (tgtEl?.get?.('gate') ? `${tgtEl.get('gate')} gate` : 'node');
     log('link_created', { source: sLabel, target: tLabel });
   });
 
   // select link
-  paper.on('link:pointerdown', (view) => { selectedLink = view.model; selectedElement = null; updateSelLabel(); });
+  paper.on('link:pointerdown', (view) => { selectedLink = view.model; selectedElement = null; updateSelLabel(); selectElement(null);
+ });
 
-  // ----- pan on blank drag -----
-  paper.on('blank:pointerdown', (evt, x, y) => {
-    selectedElement = null; selectedLink = null;
-    try { KB.ui.refreshSelection(null); } catch {}
-    updateSelLabel();
-    isPanning = true; panStart = { x, y }; pc.classList.add('grabbing');
-  });
-  paper.on('blank:pointermove', (evt, x, y) => {
-    if (!isPanning) return;
-    const dx = x - panStart.x;
-    const dy = y - panStart.y;
-    paper.translate(panOrigin.x + dx, panOrigin.y + dy);
-  });
-  paper.on('blank:pointerup', () => {
-    if (!isPanning) return;
-    const t = paper.translate(); panOrigin = { x: t.tx || 0, y: t.ty || 0 };
-    isPanning = false; pc.classList.remove('grabbing');
-  });
-
-  // ----- toolbar -----
+  /* ---------------- toolbar ---------------- */
   btnNew.addEventListener('click', () => {
     const root = createRect('Goal', 160, 120);
-    selectedElement = root; selectedLink = null; updateSelLabel();
+    selectedElement = root; selectElement(selectedElement);
+ selectedLink = null; updateSelLabel();
   });
 
-  btnAdd.addEventListener('click', () => {
-    const pos = selectedElement ? selectedElement.position() : { x: 160, y: 120 };
-    const node = createRect('Node', pos.x + 240, pos.y);
-    selectedElement = node; selectedLink = null; updateSelLabel();
-  });
+  // Delete key removes selected element/link (but not while typing in inputs)
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+  if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
+
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedElement) {
+      const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
+      const links = graph.getConnectedLinks(selectedElement);
+      links.forEach(l => l.remove());
+      selectedElement.remove(); selectElement(null);
+      try { KB.core.log('node_deleted', { label }); } catch {}
+      selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
+      e.preventDefault();
+    } else if (selectedLink) {
+      selectedLink.remove(); try { KB.core.log('link_deleted', {}); } catch {}
+      selectedLink = null; updateSelLabel(); e.preventDefault();
+    }
+  }
+});
+
+
+ btnAdd.addEventListener('click', () => {
+  const pos = selectedElement ? selectedElement.position() : { x: 160, y: 120 };
+  const node = createRect('Node', pos.x + 240, pos.y);
+  selectedElement = node; selectElement(selectedElement);
+ selectedLink = null; updateSelLabel();
+
+  // Prompt for a name right away
+  const nv = prompt('Name this step:', '');
+  if (nv && nv.trim()) {
+    node.attr('label/text', nv.trim());
+    window.autoSizeElement?.(node);
+    try { KB.core.log('node_renamed', { id: node.id, from: 'Node', to: nv.trim() }); } catch {}
+  }
+});
+
 
   btnAnd.addEventListener('click', () => {
     const pos = selectedElement ? selectedElement.position() : { x: 180, y: 160 };
     const gate = createGate('AND', pos.x + 200, pos.y + 20);
-    selectedElement = gate; selectedLink = null; updateSelLabel();
+    selectedElement = gate; selectElement(selectedElement);
+ selectedLink = null; updateSelLabel();
   });
 
   btnOr.addEventListener('click', () => {
@@ -319,7 +413,8 @@ function wireUI(graph, paper) {
       const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
       const links = graph.getConnectedLinks(selectedElement);
       links.forEach(l => l.remove());
-      selectedElement.remove();
+      selectedElement.remove(); selectElement(null);
+
       log('node_deleted', { label });
       selectedElement = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
     } else if (selectedLink) {
@@ -334,13 +429,17 @@ function wireUI(graph, paper) {
     if (!confirm('Clear the entire canvas? This cannot be undone.')) return;
     graph.clear();
     selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
-    panOrigin = { x: 0, y: 0 }; paper.translate(0, 0);
+    paper.translate(0, 0); // reset origin
   });
 
   btnSave.addEventListener('click', () => {
+    const s = Session.get() || {};
+    const pid = (s.participant_id || 'P').replace(/[^\w\-]+/g, '_');
+    const scen = (s.scenario_id || 'scen').replace(/[^\w\-]+/g, '_');
+    const when = new Date().toISOString().replace(/[:.]/g, '-');
     const json = graph.toJSON();
     const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
-    Utils.saveFile(`tree_${new Date().toISOString().replace(/[:.]/g,'-')}.json`, blob);
+    Utils.saveFile(`tree_${pid}_${scen}_manual_${when}.json`, blob);
   });
 
   btnLoad.addEventListener('click', async () => {
