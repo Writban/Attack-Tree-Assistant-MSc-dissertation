@@ -534,7 +534,7 @@ Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.max
         elementId: el.id,
         label,
         reason: 'This item doesn’t look related to the security objective — likely out of scope.',
-        score: 0.55
+        score: 0.15
       });
       continue;
     }
@@ -566,24 +566,142 @@ Core.prune = function prune({ graph, scenarioId, maxVisible = (CONFIG.prune?.max
 
 
   /* ---------------- Explain & resolve ---------------- */
-  Core.explain = function explain(label) {
-    const id = canonIdFor(label);
-    if (!id) {
+  /* ---------------- Explain & resolve (fuzzy-aware) ---------------- */
+// Lightweight, namespaced helpers (no globals leaked)
+(function () {
+  // stop words kept light; distinct from the top-of-file STOP
+  const STOP2 = new Set([
+    'the','a','an','and','or','to','of','for','in','on','with','via','by','from','as',
+    'user','users','account','accounts','system','site','app','application','page','pages',
+    'do','does','make','get','got','have','has','be','is','are','was','were','can','could',
+    'this','that','these','those','into','out','at'
+  ]);
+
+  function norm2(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/[_/\\\-]+/g, ' ')
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function stem2(tok) {
+    if (tok.length <= 3) return tok;
+    return tok
+      .replace(/(ing|ed|ers|er|ies|s)$/,'')
+      .replace(/(ion|ions)$/,'ion');
+  }
+  function tokens2(s) {
+    const n = norm2(s);
+    return n.split(' ')
+      .filter(Boolean)
+      .map(stem2)
+      .filter(t => !STOP2.has(t));
+  }
+  function trigrams2(n) {
+    const s = n.replace(/\s+/g,' ');
+    const out = [];
+    for (let i = 0; i < Math.max(0, s.length - 2); i++) out.push(s.slice(i, i+3));
+    return out;
+  }
+  function jaccard2(a, b) {
+    if (!a.length && !b.length) return 1;
+    const A = new Set(a), B = new Set(b);
+    let inter = 0;
+    for (const x of A) if (B.has(x)) inter++;
+    const uni = A.size + B.size - inter;
+    return uni ? inter / uni : 0;
+  }
+  function levenshtein2(a, b) {
+    const m = a.length, n = b.length;
+    if (!m) return n; if (!n) return m;
+    const dp = new Array(n + 1);
+    for (let j = 0; j <= n; j++) dp[j] = j;
+    for (let i = 1; i <= m; i++) {
+      let prev = dp[0], cur;
+      dp[0] = i;
+      for (let j = 1; j <= n; j++) {
+        cur = dp[j];
+        dp[j] = (a[i-1] === b[j-1]) ? prev : Math.min(prev + 1, dp[j] + 1, dp[j-1] + 1);
+        prev = cur;
+      }
+    }
+    return dp[n];
+  }
+  function strSim2(aRaw, bRaw) {
+    const aN = norm2(aRaw), bN = norm2(bRaw);
+    if (!aN && !bN) return 1;
+    const aT = tokens2(aRaw), bT = tokens2(bRaw);
+    const aG = trigrams2(aN), bG = trigrams2(bN);
+    const jTok = jaccard2(aT, bT);
+    const jTri = jaccard2(aG, bG);
+    const lev  = 1 - (levenshtein2(aN, bN) / Math.max(aN.length, bN.length, 1));
+    // weighted combo tuned for short labels
+    return 0.6 * jTok + 0.3 * jTri + 0.1 * lev;
+  }
+
+  // Soft/strict thresholds; fall back to sane defaults if not in config
+  const cfg = (KB.core.getConfig && KB.core.getConfig()) || {};
+  const matchCfg = cfg.matching || {};
+  const T_HIGH = typeof matchCfg.fuzzyThreshold === 'number' ? matchCfg.fuzzyThreshold : 0.85; // “same thing”
+  const T_MED  = typeof matchCfg.softThreshold  === 'number' ? matchCfg.softThreshold  : 0.70; // “close enough”
+
+  // Fuzzy best match over BY_ID names + aliases. No persistent index → safe to paste-in.
+  function bestMatch2(label) {
+    if (!label) return null;
+    // quick exact id/name via existing maps first
+    if (BY_ID.has(label)) return { id: label, entry: BY_ID.get(label), method: 'id', score: 1 };
+
+    // canonicalizer (your existing one) can short-circuit
+    const cid = (typeof canonIdFor === 'function') ? canonIdFor(label) : null;
+    if (cid && BY_ID.has(cid)) return { id: cid, entry: BY_ID.get(cid), method: 'canon', score: 1 };
+
+    // fuzzy scan across names + aliases
+    const labelN = norm2(label);
+    let best = { id: null, entry: null, method: 'none', score: 0 };
+    BY_ID.forEach((entry, id) => {
+      const name = entry.name || id;
+      const sName = strSim2(labelN, name);
+      if (sName > best.score) best = { id, entry, method: 'name', score: sName };
+      const aliases = Array.isArray(entry.aliases) ? entry.aliases : [];
+      for (const a of aliases) {
+        const sAlias = strSim2(labelN, a);
+        if (sAlias > best.score) best = { id, entry, method: 'alias', score: sAlias };
+      }
+    });
+    return best.id ? best : null;
+  }
+
+  // Public APIs used by the UI:
+
+  // Map user label/id → KB entry using exact → canonical → fuzzy
+  KB.core.resolve = function resolve(idOrName) {
+    if (!idOrName) return null;
+    if (BY_ID.has(idOrName)) return { id: idOrName, entry: BY_ID.get(idOrName), score: 1, method: 'id' };
+    const cid = (typeof canonIdFor === 'function') ? canonIdFor(idOrName) : null;
+    if (cid && BY_ID.has(cid)) return { id: cid, entry: BY_ID.get(cid), score: 1, method: 'canon' };
+    return bestMatch2(idOrName);
+  };
+
+  // Return a structured explanation object that kb-ui expects
+  KB.core.explain = function explain(idOrName) {
+    const res = KB.core.resolve(idOrName);
+    if (!res || !res.entry) {
       return {
-        title: label || '—',
+        title: String(idOrName || '—'),
         severity: 'unknown',
-        summary: 'No specific entry found in the knowledge base for this label.',
+        summary: 'No explanation available.',
         why: ''
       };
     }
-    const e = BY_ID.get(id) || {};
-    const title = e.name || label;
+    const e = res.entry;
+    const title = e.name || res.id;
+    // prefer rich fields; fall back cleanly
+    const summary = e.description || e.comms || e.why || 'No explanation available.';
     const severity = e.severity || 'unknown';
-    const summary = e.description || e.comms || 'This item appears in the KB but lacks a narrative.';
-    const why = e.why || '';
-    return { title, severity, summary, why };
+    return { title, severity, summary, why: (e.why || '') };
   };
-
+})();
 
   Core.addScenarioAliases = function(aliasMap) {
   if (!aliasMap) return;
@@ -757,23 +875,7 @@ Core.closest = function closest(label, k = 3) {
   return scored.slice(0, k);
 };
 
-// Always give an explanation. If we only have a fuzzy hit, include a hint.
-Core.explain = function explain(idOrName) {
-  const res = Core.resolve(idOrName);
-  if (!res || !res.entry) {
-    return { title: String(idOrName || ''), severity: 'unknown', summary: 'No explanation available.' };
-  }
-  const e = res.entry;
-  const title = e.name || res.id;
-  const body  = e.lay_explain || e.description || e.comms || e.why || 'No explanation available.';
-  const hint  = (res.method !== 'id' && res.score < 1) ? `Closest match: ${title}` : '';
-  return {
-    title,
-    severity: (e.severity || 'unknown'),
-    summary: body + (hint ? `\n\n${hint}` : ''),
-    why: e.why || ''
-  };
-};
+
 
 
 
@@ -815,9 +917,10 @@ Core.resolve = function resolve(idOrName) {
 };
 
 /* ---------------- Explain (goal-aware) ---------------- */
+/* ---------------- Explain (goal-aware, robust) ---------------- */
 Core.explain = function explain(label) {
   // 1) Scenario goal: always explain
-  if (KB.core.isScenarioGoal(label)) {
+  if (KB.core.isScenarioGoal?.(label)) {
     const title = `Goal: ${__SCEN_GOAL_LABEL}`;
     const summary = __SCEN_GOAL_EXPLAIN
       ? String(__SCEN_GOAL_EXPLAIN).trim()
@@ -825,22 +928,38 @@ Core.explain = function explain(label) {
     return { title, severity: 'info', summary, why: 'Root objective' };
   }
 
-  // 2) KB-backed items
-  const id = (typeof canonIdFor === 'function') ? canonIdFor(label) : null;
-  if (!id) {
+  // 2) Resolve via robust pipeline (exact → canonical → fuzzy)
+  const res = Core.resolve?.(label);
+  if (!res || !res.entry) {
     return {
-      title: label || '—',
+      title: String(label || '—'),
       severity: 'unknown',
-      summary: 'No specific entry found in the knowledge base for this label.'
+      summary: 'No explanation available.'
     };
   }
-  const e = BY_ID.get(id) || {};
-  const title = e.name || label;
+
+  const e = res.entry;
+  const title = e.name || res.id || label;
+
+  // Prefer lay-person text if present, then other fields
+  const summary =
+    (e.lay_explain && String(e.lay_explain).trim()) ||
+    (e.description && String(e.description).trim()) ||
+    (e.comms && String(e.comms).trim()) ||
+    (e.why && String(e.why).trim()) ||
+    'No explanation available.';
+
+  // Severity passes through; your UI already maps to colored badges
   const severity = e.severity || 'unknown';
-  const summary = e.description || e.comms || 'This item appears in the KB but lacks a narrative.';
-  const why = e.why || '';
-  return { title, severity, summary, why };
+
+  // If this was a fuzzy match (not exact), append a gentle hint
+  const hint = (res.method !== 'id' && res.method !== 'canon' && res.score < 1)
+    ? `\n\nClosest match: ${e.name || res.id}`
+    : '';
+
+  return { title, severity, summary: summary + hint, why: e.why || '' };
 };
+
 
 
 

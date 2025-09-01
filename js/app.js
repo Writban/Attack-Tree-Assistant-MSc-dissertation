@@ -1,8 +1,6 @@
 // js/app.js — ports drag-to-link, one small arrowhead at TARGET, center/boundary anchoring,
-// pan on blank, add/rename/delete/clear/save/load, session start dialog.
+// smooth pan + zoom (no hard borders), add/rename/delete/clear/save/load, session start dialog.
 // RQ1/RQ2 instrumentation: logs manual actions (create/link/rename/delete).
-// + Undo/Redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z / Ctrl/Cmd+Y)
-// + Selection highlight for nodes AND links (red stroke)
 
 document.addEventListener('DOMContentLoaded', () => {
   init().catch(err => { console.error('[FATAL]', err); showFatal(err); });
@@ -20,29 +18,6 @@ async function init() {
   wireUI(graph, paper);
   ensureSessionStart();
 }
-
-// --- text measurement + autosize ---
-(function(){
-  const measureCtx = document.createElement('canvas').getContext('2d');
-  // match your SVG label style (tweak if you changed fonts/sizes)
-  const LABEL_FONT = '14px Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
-
-  function measureTextWidth(txt) {
-    try { measureCtx.font = LABEL_FONT; } catch {}
-    return Math.ceil(measureCtx.measureText(String(txt || '')).width);
-  }
-
-  window.autoSizeElement = function autoSizeElement(el) {
-    if (!el || typeof el.attr !== 'function' || typeof el.resize !== 'function') return;
-    const label = el.attr('label/text') || '';
-    const size  = (typeof el.size === 'function' ? el.size() : el.get('size')) || { width: 200, height: 44 };
-    const minW  = 160;           // minimum box width
-    const pad   = 24;            // horizontal padding inside the rect
-    const needed = measureTextWidth(label) + pad * 2;
-    const newW = Math.max(minW, needed);
-    el.resize(newW, size.height);
-  };
-})();
 
 /* -------------------- lib loader -------------------- */
 async function ensureLibs() {
@@ -65,6 +40,9 @@ function ensureScript(testFn, url, name) {
 async function safeLoadConfigAndKB() {
   try { await KB.core.loadConfig(); } catch (e) { console.warn('[INIT] config load failed:', e); }
   try { await KB.core.loadKB(); } catch (e) { console.warn('[INIT] KB load failed:', e); }
+
+  try { await KB.core.loadExtraAliases?.(); } catch (e) { console.warn('[INIT] extra aliases load failed:', e); }
+
 }
 
 /* -------------------- visuals -------------------- */
@@ -75,18 +53,16 @@ const TARGET_MARKER = { type: 'path', d: 'M 10 -5 L 0 0 L 10 5 z', stroke: LINK_
 (function () {
   const measureCtx = document.createElement('canvas').getContext('2d');
   const LABEL_FONT = '14px Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
-
   function measureTextWidth(txt) {
     try { measureCtx.font = LABEL_FONT; } catch {}
     return Math.ceil(measureCtx.measureText(String(txt || '')).width);
   }
-
   window.autoSizeElement = function autoSizeElement(el) {
     if (!el || typeof el.attr !== 'function' || typeof el.resize !== 'function') return;
     const label = el.attr('label/text') || '';
     const size  = (typeof el.size === 'function' ? el.size() : el.get('size')) || { width: 200, height: 44 };
     const minW  = 160;   // min box width
-    const pad   = 24;    // left+right text padding inside the rect
+    const pad   = 24;    // left+right padding for text
     const needed = measureTextWidth(label) + pad * 2;
     const newW = Math.max(minW, needed);
     el.resize(newW, size.height);
@@ -142,6 +118,28 @@ function wireUI(graph, paper) {
   // Simple logger passthrough for RQ1/RQ2
   const log = (ev, data) => { try { KB?.core?.log?.(ev, data || {}); } catch {} };
 
+  // ---- Selection highlight (red outline) ----
+let __highlighted = null;
+
+function setHighlight(el, on) {
+  if (!el) return;
+  const isGate = !!el.get?.('gate');
+  if (isGate) {
+    el.attr('body/stroke', on ? '#ef4444' : '#60a5fa');
+    el.attr('body/strokeWidth', on ? 3 : 2);
+  } else {
+    el.attr('body/stroke', on ? '#ef4444' : '#6b7280');
+    el.attr('body/strokeWidth', on ? 3 : 2);
+  }
+}
+
+function selectElement(el) {
+  if (__highlighted && __highlighted !== el) setHighlight(__highlighted, false);
+  __highlighted = el || null;
+  if (__highlighted) setHighlight(__highlighted, true);
+}
+
+
   // ---- Ports on all 4 sides ----
   const PORT_GROUPS = {
     left:   { position: { name: 'left'   }, attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
@@ -185,36 +183,96 @@ function wireUI(graph, paper) {
     return gate;
   }
 
-  // selection + highlight
+  // selection
   let selectedElement = null;
   let selectedLink = null;
 
-  function clearNodeHighlight(el) {
-    if (!el) return;
-    const isGate = !!el.get?.('gate');
-    el.attr('body/stroke', isGate ? '#60a5fa' : '#6b7280');
-    el.attr('body/strokeWidth', 2);
-  }
-  function setNodeHighlight(el) {
-    if (!el) return;
-    el.attr('body/stroke', '#ef4444');
-    el.attr('body/strokeWidth', 3);
-  }
-  function clearLinkHighlight(lnk) {
-    if (!lnk) return;
-    lnk.attr('line/stroke', LINK_COLOR);
-    lnk.attr('line/strokeWidth', 2);
-  }
-  function setLinkHighlight(lnk) {
-    if (!lnk) return;
-    lnk.attr('line/stroke', '#ef4444');
-    lnk.attr('line/strokeWidth', 3);
-  }
-  function clearAllHighlights() {
-    clearNodeHighlight(selectedElement);
-    clearLinkHighlight(selectedLink);
+  /* ---------- Smooth Panning & Zoom (single state; no redeclare) ---------- */
+  const pc = document.getElementById('paper-container');
+  pc.style.touchAction = 'none'; // allow pinch/trackpad zoom
+
+  const pan = {
+    active: false,
+    startClient: { x: 0, y: 0 },
+    startOrigin: { x: 0, y: 0 }
+  };
+
+  // current translation (origin) and scale
+  let SCALE = 1;
+  const MIN_SCALE = 0.2;
+  const MAX_SCALE = 2.5;
+
+  // Utility: get current translate()
+  function currentOrigin() {
+    const t = (paper.translate && paper.translate()) || { tx: 0, ty: 0 };
+    return { x: t.tx || 0, y: t.ty || 0 };
   }
 
+  // Keep the point under the cursor stable while zooming
+  function zoomAt(clientX, clientY, nextScale) {
+    nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
+    const rect = pc.getBoundingClientRect();
+    const cx = clientX - rect.left;
+    const cy = clientY - rect.top;
+
+    const origin = currentOrigin();
+    // world coords under cursor before scaling
+    const wx = (cx - origin.x) / SCALE;
+    const wy = (cy - origin.y) / SCALE;
+
+    SCALE = nextScale;
+    paper.scale(SCALE, SCALE);
+
+    // translate so that (wx, wy) remains under the cursor
+    const nx = cx - wx * SCALE;
+    const ny = cy - wy * SCALE;
+    paper.translate(nx, ny);
+  }
+
+  // start pan on blank
+  paper.on('blank:pointerdown', (evt) => { selectElement(null);
+
+    // clear selection
+    selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
+
+    const o = currentOrigin();
+    pan.startOrigin = { x: o.x, y: o.y };
+    pan.startClient = { x: evt.clientX, y: evt.clientY };
+    pan.active = true;
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+  });
+
+  // document-level move/up = smooth drag even if cursor leaves canvas
+  function onDocMove(evt) {
+    if (!pan.active) return;
+    evt.preventDefault?.();
+    const dx = evt.clientX - pan.startClient.x;
+    const dy = evt.clientY - pan.startClient.y;
+    paper.translate(pan.startOrigin.x + dx, pan.startOrigin.y + dy);
+  }
+  function onDocUp() {
+    if (!pan.active) return;
+    pan.active = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  }
+  document.addEventListener('mousemove', onDocMove, { passive: false });
+  document.addEventListener('mouseup', onDocUp, { passive: false });
+
+  // Wheel to zoom (Ctrl/Cmd or trackpad pinch)
+  pc.addEventListener('wheel', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return; // regular scroll to page; Ctrl/⌘ => zoom canvas
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    zoomAt(e.clientX, e.clientY, SCALE * factor);
+  }, { passive: false });
+
+  // block default context menu (we right-drag to pan too if desired)
+  pc.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  /* ---------------- element/link interactions ---------------- */
   const $ = (id) => document.getElementById(id);
   const btnNew   = $('btn-new');
   const btnAdd   = $('btn-add');
@@ -226,116 +284,15 @@ function wireUI(graph, paper) {
   const btnSave  = $('btn-save');
   const btnLoad  = $('btn-load');
 
-  // Insert an Undo button (next to Load) so there’s also a visible control
-  let btnUndo = document.getElementById('btn-undo');
-  if (!btnUndo && btnLoad && btnLoad.parentNode) {
-    btnUndo = document.createElement('button');
-    btnUndo.id = 'btn-undo';
-    btnUndo.textContent = 'Undo';
-    btnLoad.parentNode.insertBefore(btnUndo, btnLoad.nextSibling);
-  }
-
   function updateSelLabel() {
     const label = selectedElement?.attr?.('label/text') || (selectedLink ? 'link' : '');
     $('sel-label').textContent = label ? `Selected: ${label}` : 'No selection';
   }
 
-  // ----- Undo/Redo history -----
-  const HISTORY_LIMIT = 80;
-  const history = [];
-  const future  = [];
-  let suppressHistory = false;
-
-  function snapshotIfChanged() {
-    if (suppressHistory) return;
-    try {
-      const s = JSON.stringify(graph.toJSON());
-      if (!history.length || history[history.length - 1] !== s) {
-        history.push(s);
-        if (history.length > HISTORY_LIMIT) history.shift();
-        // Clear redo stack on new action
-        future.length = 0;
-      }
-    } catch (e) { /* ignore */ }
-  }
-  const snapshotThrottled = _.throttle(snapshotIfChanged, 250);
-
-  graph.on('add remove change', snapshotThrottled);
-
-  // initial empty snapshot
-  snapshotIfChanged();
-
-  function doUndo() {
-    if (history.length <= 1) return; // nothing to undo
-    const cur = history.pop();       // current
-    future.push(cur);                // stash for redo
-    const prev = history[history.length - 1];
-    suppressHistory = true;
-    try {
-      graph.fromJSON(JSON.parse(prev));
-      clearAllHighlights();
-      selectedElement = null; selectedLink = null; updateSelLabel();
-    } finally { suppressHistory = false; }
-  }
-  function doRedo() {
-    if (!future.length) return;
-    const next = future.pop();
-    suppressHistory = true;
-    try {
-      graph.fromJSON(JSON.parse(next));
-      clearAllHighlights();
-      selectedElement = null; selectedLink = null; updateSelLabel();
-    } finally { suppressHistory = false; }
-    // push it onto history as the new state
-    history.push(next);
-  }
-
-  if (btnUndo) btnUndo.addEventListener('click', doUndo);
-
-  // Keyboard shortcuts:
-  // Undo: Ctrl/Cmd + Z
-  // Redo: Ctrl/Cmd + Shift + Z  OR  Ctrl/Cmd + Y
-  document.addEventListener('keydown', (ev) => {
-    const isMod = ev.metaKey || ev.ctrlKey;
-    if (!isMod) return;
-
-    const k = ev.key.toLowerCase();
-
-    if (k === 'z' && !ev.shiftKey) {
-      ev.preventDefault();
-      doUndo();
-    } else if ((k === 'z' && ev.shiftKey) || k === 'y') {
-      ev.preventDefault();
-      doRedo();
-    }
-
-    // Delete selection with Delete/Backspace
-    if ((k === 'backspace' || k === 'delete') && (selectedElement || selectedLink)) {
-      ev.preventDefault();
-      if (selectedElement) {
-        const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
-        const links = graph.getConnectedLinks(selectedElement);
-        links.forEach(l => l.remove());
-        selectedElement.remove();
-        log('node_deleted', { label });
-        clearNodeHighlight(selectedElement);
-        selectedElement = null;
-      } else if (selectedLink) {
-        selectedLink.remove(); log('link_deleted', {});
-        clearLinkHighlight(selectedLink);
-        selectedLink = null;
-      }
-      updateSelLabel();
-      snapshotThrottled();
-    }
-  });
-
-  // ----- element interactions -----
   paper.on('element:pointerdown', (view) => {
-    clearLinkHighlight(selectedLink);
-    clearNodeHighlight(selectedElement);
-    selectedElement = view.model; selectedLink = null;
-    setNodeHighlight(selectedElement);
+    selectedElement = view.model; 
+    selectElement(selectedElement);
+selectedLink = null;
     try { KB.ui.refreshSelection(view); } catch {}
     document.dispatchEvent(new CustomEvent('kb:selection', { detail: { parent: selectedElement.attr('label/text') || '' } }));
     updateSelLabel();
@@ -351,11 +308,10 @@ function wireUI(graph, paper) {
       log('node_renamed', { id: selectedElement.id, from: old, to: nv.trim() });
       try { KB.ui.refreshSelection({ model: selectedElement }); } catch {}
       updateSelLabel();
-      snapshotThrottled();
     }
   });
 
-  // ----- link created: center anchors, boundary connection, single arrow at TARGET -----
+  // Link created: center anchors, boundary connection, single arrow at TARGET
   paper.on('link:connect', (linkView) => {
     const m = linkView.model;
     const srcEl = m.getSourceElement();
@@ -371,124 +327,72 @@ function wireUI(graph, paper) {
     if (typeof linkView.update === 'function') linkView.update();
     if (typeof m.toFront === 'function') m.toFront();
 
-    // RQ1/RQ2: log link creation (for parsimony/structure diffs)
+    // log link creation
     const sLabel = srcEl?.attr?.('label/text') || (srcEl?.get?.('gate') ? `${srcEl.get('gate')} gate` : 'node');
     const tLabel = tgtEl?.attr?.('label/text') || (tgtEl?.get?.('gate') ? `${tgtEl.get('gate')} gate` : 'node');
     log('link_created', { source: sLabel, target: tLabel });
-    snapshotThrottled();
   });
 
   // select link
-  paper.on('link:pointerdown', (view) => {
-    clearNodeHighlight(selectedElement);
-    clearLinkHighlight(selectedLink);
-    selectedLink = view.model; selectedElement = null;
-    setLinkHighlight(selectedLink);
-    updateSelLabel();
-  });
+  paper.on('link:pointerdown', (view) => { selectedLink = view.model; selectedElement = null; updateSelLabel(); selectElement(null);
+ });
 
-  // ----- Panning & Zooming (document-based; no hard borders) -----
-  const pc = document.getElementById('paper-container');
-  pc.style.touchAction = 'none';       // allow pinch/trackpad zoom on browsers
-  let isPanning = false;
-  let panStartClient = { x: 0, y: 0 };
-  let panOrigin = (paper.translate && paper.translate()) || { tx: 0, ty: 0 };
-  panOrigin = { x: panOrigin.tx || 0, y: panOrigin.ty || 0 };
-
-  let SCALE = 1;
-  const MIN_SCALE = 0.2;
-  const MAX_SCALE = 2.5;
-
-  function zoomAt(clientX, clientY, nextScale) {
-    nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
-    const rect = pc.getBoundingClientRect();
-    const cx = clientX - rect.left;
-    const cy = clientY - rect.top;
-
-    const wx = (cx - panOrigin.x) / SCALE;
-    const wy = (cy - panOrigin.y) / SCALE;
-
-    SCALE = nextScale;
-    paper.scale(SCALE, SCALE);
-
-    panOrigin.x = cx - wx * SCALE;
-    panOrigin.y = cy - wy * SCALE;
-    paper.translate(panOrigin.x, panOrigin.y);
-  }
-
-  paper.on('blank:pointerdown', (evt) => {
-    clearAllHighlights();
-    selectedElement = null; selectedLink = null; updateSelLabel();
-
-    isPanning = true;
-    panStartClient = { x: evt.clientX, y: evt.clientY };
-    document.body.style.cursor = 'grabbing';
-  });
-  function onDocMove(evt) {
-    if (!isPanning) return;
-    const dx = evt.clientX - panStartClient.x;
-    const dy = evt.clientY - panStartClient.y;
-    paper.translate(panOrigin.x + dx, panOrigin.y + dy);
-  }
-  function onDocUp(evt) {
-    if (!isPanning) return;
-    panOrigin.x += (evt.clientX - panStartClient.x);
-    panOrigin.y += (evt.clientY - panStartClient.y);
-    isPanning = false;
-    document.body.style.cursor = '';
-  }
-  document.addEventListener('mousemove', onDocMove);
-  document.addEventListener('mouseup', onDocUp);
-
-  pc.addEventListener('wheel', (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return; 
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    zoomAt(e.clientX, e.clientY, SCALE * factor);
-  }, { passive: false });
-
-  pc.addEventListener('contextmenu', (e) => e.preventDefault());
-
-  // ----- toolbar -----
+  /* ---------------- toolbar ---------------- */
   btnNew.addEventListener('click', () => {
     const root = createRect('Goal', 160, 120);
-    selectedElement = root; selectedLink = null; updateSelLabel();
-    clearAllHighlights(); setNodeHighlight(root);
-    snapshotThrottled();
+    selectedElement = root; selectElement(selectedElement);
+ selectedLink = null; updateSelLabel();
   });
 
-  btnAdd.addEventListener('click', () => {
-    const pos = selectedElement ? selectedElement.position() : { x: 160, y: 120 };
-    const node = createRect('Node', pos.x + 240, pos.y);
-    selectedElement = node; selectedLink = null; updateSelLabel();
-    clearAllHighlights(); setNodeHighlight(node);
-    snapshotThrottled();
+  // Delete key removes selected element/link (but not while typing in inputs)
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+  if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
 
-    // Prompt rename immediately for newly added generic nodes
-    const old = node.attr('label/text') || 'Node';
-    const nv = prompt('Name this node:', old);
-    if (nv && nv.trim() && nv.trim() !== old) {
-      node.attr('label/text', nv.trim());
-      window.autoSizeElement?.(node);
-      log('node_renamed', { id: node.id, from: old, to: nv.trim() });
-      snapshotThrottled();
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedElement) {
+      const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
+      const links = graph.getConnectedLinks(selectedElement);
+      links.forEach(l => l.remove());
+      selectedElement.remove(); selectElement(null);
+      try { KB.core.log('node_deleted', { label }); } catch {}
+      selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
+      e.preventDefault();
+    } else if (selectedLink) {
+      selectedLink.remove(); try { KB.core.log('link_deleted', {}); } catch {}
+      selectedLink = null; updateSelLabel(); e.preventDefault();
     }
-  });
+  }
+});
+
+
+ btnAdd.addEventListener('click', () => {
+  const pos = selectedElement ? selectedElement.position() : { x: 160, y: 120 };
+  const node = createRect('Node', pos.x + 240, pos.y);
+  selectedElement = node; selectElement(selectedElement);
+ selectedLink = null; updateSelLabel();
+
+  // Prompt for a name right away
+  const nv = prompt('Name this step:', '');
+  if (nv && nv.trim()) {
+    node.attr('label/text', nv.trim());
+    window.autoSizeElement?.(node);
+    try { KB.core.log('node_renamed', { id: node.id, from: 'Node', to: nv.trim() }); } catch {}
+  }
+});
+
 
   btnAnd.addEventListener('click', () => {
     const pos = selectedElement ? selectedElement.position() : { x: 180, y: 160 };
     const gate = createGate('AND', pos.x + 200, pos.y + 20);
-    selectedElement = gate; selectedLink = null; updateSelLabel();
-    clearAllHighlights(); setNodeHighlight(gate);
-    snapshotThrottled();
+    selectedElement = gate; selectElement(selectedElement);
+ selectedLink = null; updateSelLabel();
   });
 
   btnOr.addEventListener('click', () => {
     const pos = selectedElement ? selectedElement.position() : { x: 180, y: 160 };
     const gate = createGate('OR', pos.x + 200, pos.y + 20);
     selectedElement = gate; selectedLink = null; updateSelLabel();
-    clearAllHighlights(); setNodeHighlight(gate);
-    snapshotThrottled();
   });
 
   btnRen.addEventListener('click', () => {
@@ -501,7 +405,6 @@ function wireUI(graph, paper) {
       log('node_renamed', { id: selectedElement.id, from: old, to: nv.trim() });
       try { KB.ui.refreshSelection({ model: selectedElement }); } catch {}
       updateSelLabel();
-      snapshotThrottled();
     }
   });
 
@@ -510,16 +413,13 @@ function wireUI(graph, paper) {
       const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
       const links = graph.getConnectedLinks(selectedElement);
       links.forEach(l => l.remove());
-      selectedElement.remove();
+      selectedElement.remove(); selectElement(null);
+
       log('node_deleted', { label });
-      clearNodeHighlight(selectedElement);
       selectedElement = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
-      snapshotThrottled();
     } else if (selectedLink) {
       selectedLink.remove(); log('link_deleted', {});
-      clearLinkHighlight(selectedLink);
       selectedLink = null; updateSelLabel();
-      snapshotThrottled();
     } else {
       alert('Select a node or link to delete.');
     }
@@ -528,25 +428,25 @@ function wireUI(graph, paper) {
   btnClear.addEventListener('click', () => {
     if (!confirm('Clear the entire canvas? This cannot be undone.')) return;
     graph.clear();
-    clearAllHighlights();
     selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
-    paper.translate(0, 0);
-    snapshotThrottled();
+    paper.translate(0, 0); // reset origin
   });
 
   btnSave.addEventListener('click', () => {
+    const s = Session.get() || {};
+    const pid = (s.participant_id || 'P').replace(/[^\w\-]+/g, '_');
+    const scen = (s.scenario_id || 'scen').replace(/[^\w\-]+/g, '_');
+    const when = new Date().toISOString().replace(/[:.]/g, '-');
     const json = graph.toJSON();
     const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
-    Utils.saveFile(`tree_${new Date().toISOString().replace(/[:.]/g,'-')}.json`, blob);
+    Utils.saveFile(`tree_${pid}_${scen}_manual_${when}.json`, blob);
   });
 
   btnLoad.addEventListener('click', async () => {
     const file = await pickFile(); if (!file) return;
     const text = await file.text(); const json = JSON.parse(text);
     graph.fromJSON(json);
-    clearAllHighlights();
     selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
-    snapshotThrottled();
   });
 
   function pickFile() {
