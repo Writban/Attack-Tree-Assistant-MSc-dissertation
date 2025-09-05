@@ -8,14 +8,18 @@ html, body, #app { height: 100%; margin: 0; background: #0f141a; color: #e5e7eb;
   position: absolute;
   top: 48px;
   left: 0;
-  right: 360px;  /* leaves room for the side panel */
+  right: 0px;  /* leaves room for the side panel */
   bottom: 0;
   background: #0b0f14;
   z-index: 1;    /* sits above page background, below the panel */
 }
 
 
-#kb-panel { position: absolute; top: 48px; right: 0; bottom: 0; width: 360px; border-left: 1px solid #263140; background: #121821; display: flex; flex-direction: column; }
+#kb-panel { position: absolute; top: 48px; right: 0; bottom: 0; width: 360px; border-left: 1px solid #263140; background: #121821; display: none; flex-direction: column; z-index: 2; }
+
+/* When assistance is enabled, show panel and shrink canvas */
+body.assistant-on #kb-panel { display: flex; }
+body.assistant-on #paper-container { right: 360px; }
 
 .tabs { display: flex; gap: 8px; padding: 8px; border-bottom: 1px solid #263140; }
 .tabs button { flex: 1; background: #1b2330; color: #cbd5e1; border: 1px solid #334155; border-radius: 8px; padding: 8px; cursor: pointer; }

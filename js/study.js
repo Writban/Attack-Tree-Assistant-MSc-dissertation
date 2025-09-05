@@ -228,6 +228,11 @@
     const tabSuggest = document.getElementById("tab-suggest");
     const tabReview = document.getElementById("tab-review");
 
+    document.body.classList.toggle('assistant-on', !!on);
+
+    kbPanel.style.display = on ? 'flex' : 'none';
+    const pc = document.getElementById('paper-container'); if (pc) pc.style.right = on ? '360px' : '0';
+
     if (on) {
       if (btnSuggest) btnSuggest.style.display = "";
       if (btnReview) btnReview.style.display = "";
