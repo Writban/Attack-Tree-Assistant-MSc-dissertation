@@ -140,6 +140,34 @@ function selectElement(el) {
 }
 
 
+
+// ---- Link highlight (similar to node highlight) ----
+let __linkHighlighted = null;
+
+function setLinkHighlight(linkModel, on) {
+  if (!linkModel) return;
+  const attrs = linkModel.attr('line') || {};
+  linkModel.attr('line', {
+    ...attrs,
+    stroke: on ? '#ef4444' : LINK_COLOR,   // use same red as nodes when selected
+    strokeWidth: on ? 3 : 2,
+    targetMarker: on
+      ? { ...TARGET_MARKER, fill: '#ef4444', stroke: '#ef4444' }
+      : TARGET_MARKER,
+    sourceMarker: { type: 'none' }
+  });
+}
+
+function selectLink(linkModel) {
+  if (__linkHighlighted && __linkHighlighted !== linkModel) {
+    setLinkHighlight(__linkHighlighted, false);
+  }
+  __linkHighlighted = linkModel || null;
+  if (__linkHighlighted) setLinkHighlight(__linkHighlighted, true);
+}
+
+
+
   // ---- Ports on all 4 sides ----
   const PORT_GROUPS = {
     left:   { position: { name: 'left'   }, attrs: { circle: { r: 5, magnet: true, fill: '#60a5fa', stroke: '#0b0f14' } } },
@@ -232,9 +260,17 @@ function selectElement(el) {
   // start pan on blank
   paper.on('blank:pointerdown', (evt) => { selectElement(null);
 
-    // clear selection
-    selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
+     // clear selection
+  selectedElement = null;
+  selectedLink = null;
+  updateSelLabel();
+  try { KB.ui.refreshSelection(null); } catch {}
 
+  // NEW: also un-highlight any selected link
+  if (__linkHighlighted) {
+    setLinkHighlight(__linkHighlighted, false);
+    __linkHighlighted = null;
+  }
     const o = currentOrigin();
     pan.startOrigin = { x: o.x, y: o.y };
     pan.startClient = { x: evt.clientX, y: evt.clientY };
@@ -289,14 +325,24 @@ function selectElement(el) {
     $('sel-label').textContent = label ? `Selected: ${label}` : 'No selection';
   }
 
-  paper.on('element:pointerdown', (view) => {
-    selectedElement = view.model; 
-    selectElement(selectedElement);
-selectedLink = null;
-    try { KB.ui.refreshSelection(view); } catch {}
-    document.dispatchEvent(new CustomEvent('kb:selection', { detail: { parent: selectedElement.attr('label/text') || '' } }));
-    updateSelLabel();
-  });
+paper.on('element:pointerdown', (view) => {
+  selectedElement = view.model;
+  selectElement(selectedElement);
+
+  // NEW: un-highlight any selected link
+  if (__linkHighlighted) {
+    setLinkHighlight(__linkHighlighted, false);
+    __linkHighlighted = null;
+  }
+  selectedLink = null;
+
+  try { KB.ui.refreshSelection(view); } catch {}
+  document.dispatchEvent(new CustomEvent('kb:selection', {
+    detail: { parent: selectedElement.attr('label/text') || '' }
+  }));
+  updateSelLabel();
+});
+
 
   paper.on('element:pointerdblclick', (view) => {
     selectedElement = view.model;
@@ -334,15 +380,35 @@ selectedLink = null;
   });
 
   // select link
-  paper.on('link:pointerdown', (view) => { selectedLink = view.model; selectedElement = null; updateSelLabel(); selectElement(null);
- });
+paper.on('link:pointerdown', (view) => {
+  selectedLink = view.model;
+  selectedElement = null;
+
+  // clear any node highlight, then highlight the link
+  selectElement(null);
+  selectLink(selectedLink);
+
+  updateSelLabel();
+});
+
 
   /* ---------------- toolbar ---------------- */
-  btnNew.addEventListener('click', () => {
-    const root = createRect('Goal', 160, 120);
-    selectedElement = root; selectElement(selectedElement);
- selectedLink = null; updateSelLabel();
-  });
+btnNew.addEventListener('click', () => {
+  const root = createRect('Goal', 160, 120);
+  selectedElement = root;
+  selectElement(selectedElement);
+
+  // NEW
+  if (__linkHighlighted) {
+    setLinkHighlight(__linkHighlighted, false);
+    __linkHighlighted = null;
+  }
+
+  selectedLink = null;
+  updateSelLabel();
+  try { KB.ui.refreshSelection(null); } catch {}
+});
+
 
   // Delete key removes selected element/link (but not while typing in inputs)
 document.addEventListener('keydown', (e) => {
@@ -355,15 +421,31 @@ document.addEventListener('keydown', (e) => {
       const links = graph.getConnectedLinks(selectedElement);
       links.forEach(l => l.remove());
       selectedElement.remove(); selectElement(null);
+
+      // NEW: un-highlight any selected link
+      if (__linkHighlighted) {
+        setLinkHighlight(__linkHighlighted, false);
+        __linkHighlighted = null;
+      }
+
       try { KB.core.log('node_deleted', { label }); } catch {}
       selectedElement = null; selectedLink = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
       e.preventDefault();
     } else if (selectedLink) {
-      selectedLink.remove(); try { KB.core.log('link_deleted', {}); } catch {}
+      selectedLink.remove();
+
+      // NEW: un-highlight any selected link
+      if (__linkHighlighted) {
+        setLinkHighlight(__linkHighlighted, false);
+        __linkHighlighted = null;
+      }
+
+      try { KB.core.log('link_deleted', {}); } catch {}
       selectedLink = null; updateSelLabel(); e.preventDefault();
     }
   }
 });
+
 
 
  btnAdd.addEventListener('click', () => {
@@ -371,6 +453,11 @@ document.addEventListener('keydown', (e) => {
   const node = createRect('Node', pos.x + 240, pos.y);
   selectedElement = node; selectElement(selectedElement);
  selectedLink = null; updateSelLabel();
+
+   if (__linkHighlighted) {
+    setLinkHighlight(__linkHighlighted, false);
+    __linkHighlighted = null;
+  }
 
   // Prompt for a name right away
   const nv = prompt('Name this step:', '');
@@ -382,18 +469,42 @@ document.addEventListener('keydown', (e) => {
 });
 
 
-  btnAnd.addEventListener('click', () => {
-    const pos = selectedElement ? selectedElement.position() : { x: 180, y: 160 };
-    const gate = createGate('AND', pos.x + 200, pos.y + 20);
-    selectedElement = gate; selectElement(selectedElement);
- selectedLink = null; updateSelLabel();
-  });
+btnAnd.addEventListener('click', () => {
+  const pos = selectedElement ? selectedElement.position() : { x: 180, y: 160 };
+  const gate = createGate('AND', pos.x + 200, pos.y + 20);
+  selectedElement = gate;
+  selectElement(selectedElement);
 
-  btnOr.addEventListener('click', () => {
-    const pos = selectedElement ? selectedElement.position() : { x: 180, y: 160 };
-    const gate = createGate('OR', pos.x + 200, pos.y + 20);
-    selectedElement = gate; selectedLink = null; updateSelLabel();
-  });
+  // NEW
+  if (__linkHighlighted) {
+    setLinkHighlight(__linkHighlighted, false);
+    __linkHighlighted = null;
+  }
+
+  selectedLink = null;
+  updateSelLabel();
+  try { KB.ui.refreshSelection(null); } catch {}
+});
+
+
+btnOr.addEventListener('click', () => {
+  const pos = selectedElement ? selectedElement.position() : { x: 180, y: 160 };
+  const gate = createGate('OR', pos.x + 200, pos.y + 20);
+  selectedElement = gate;
+  // if your code didn’t call this before, it’s fine to call it now:
+  selectElement(selectedElement);
+
+  // NEW
+  if (__linkHighlighted) {
+    setLinkHighlight(__linkHighlighted, false);
+    __linkHighlighted = null;
+  }
+
+  selectedLink = null;
+  updateSelLabel();
+  try { KB.ui.refreshSelection(null); } catch {}
+});
+
 
   btnRen.addEventListener('click', () => {
     if (!selectedElement) return alert('Select a node to rename.');
@@ -408,22 +519,36 @@ document.addEventListener('keydown', (e) => {
     }
   });
 
-  btnDel.addEventListener('click', () => {
-    if (selectedElement) {
-      const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
-      const links = graph.getConnectedLinks(selectedElement);
-      links.forEach(l => l.remove());
-      selectedElement.remove(); selectElement(null);
+btnDel.addEventListener('click', () => {
+  if (selectedElement) {
+    const label = selectedElement.attr?.('label/text') || (selectedElement.get?.('gate') ? `${selectedElement.get('gate')} gate` : 'node');
+    const links = graph.getConnectedLinks(selectedElement);
+    links.forEach(l => l.remove());
+    selectedElement.remove(); selectElement(null);
 
-      log('node_deleted', { label });
-      selectedElement = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
-    } else if (selectedLink) {
-      selectedLink.remove(); log('link_deleted', {});
-      selectedLink = null; updateSelLabel();
-    } else {
-      alert('Select a node or link to delete.');
+    // NEW: un-highlight any selected link
+    if (__linkHighlighted) {
+      setLinkHighlight(__linkHighlighted, false);
+      __linkHighlighted = null;
     }
-  });
+
+    log('node_deleted', { label });
+    selectedElement = null; updateSelLabel(); try { KB.ui.refreshSelection(null); } catch {}
+  } else if (selectedLink) {
+    selectedLink.remove(); log('link_deleted', {});
+
+    // NEW: un-highlight any selected link
+    if (__linkHighlighted) {
+      setLinkHighlight(__linkHighlighted, false);
+      __linkHighlighted = null;
+    }
+
+    selectedLink = null; updateSelLabel();
+  } else {
+    alert('Select a node or link to delete.');
+  }
+});
+
 
   btnClear.addEventListener('click', () => {
     if (!confirm('Clear the entire canvas? This cannot be undone.')) return;
