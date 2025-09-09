@@ -3,6 +3,7 @@
   "matching": {
     "minScore": 0.45,
     "fuzzyThreshold": 0.86,
+      "softThreshold": 0.70,
     "weights": {
       "exact": 1.0, "alias": 0.92, "keyword": 0.62, "regex": 0.75, "fuzzy": 0.52,
       "contextBonus": 0.20, "parentBonus": 0.15
@@ -24,5 +25,7 @@
   "ui": { "debounceMs": 180 },
   "suggest": { "minScore": 0.35, "topK": 3, "moreK": 7 },
   "prune":   { "flagThreshold": 0.45, "maxVisible": 3 },
-  "fuzzy":   { "enabled": true, "maxDistance": 2, "tokenOverlapMin": 0.6 }
+  "fuzzy":   { "enabled": true, "maxDistance": 2, "tokenOverlapMin": 0.6 },
+  "semantic":{"enabled":true,"threshold":0.62,"topK":3}
+
 }

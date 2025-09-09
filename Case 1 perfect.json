@@ -1,0 +1,1306 @@
+{
+  "cells": [
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 140,
+        "y": 40
+      },
+      "size": {
+        "width": 260,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_root",
+      "ports": {
+        "groups": {
+          "left": {
+            "position": {
+              "name": "left"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "right": {
+            "position": {
+              "name": "right"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "top": {
+            "position": {
+              "name": "top"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "bottom": {
+            "position": {
+              "name": "bottom"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          }
+        },
+        "items": [
+          {
+            "id": "n_root_l",
+            "group": "left"
+          },
+          {
+            "id": "n_root_r",
+            "group": "right"
+          },
+          {
+            "id": "n_root_t",
+            "group": "top"
+          },
+          {
+            "id": "n_root_b",
+            "group": "bottom"
+          }
+        ]
+      },
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "Access a student account"
+        }
+      }
+    },
+    {
+      "type": "standard.Circle",
+      "position": {
+        "x": 240,
+        "y": 120
+      },
+      "size": {
+        "width": 38,
+        "height": 38
+      },
+      "angle": 0,
+      "id": "g_root_or",
+      "gate": "OR",
+      "ports": {
+        "groups": {
+          "left": {
+            "position": {
+              "name": "left"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "right": {
+            "position": {
+              "name": "right"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "top": {
+            "position": {
+              "name": "top"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "bottom": {
+            "position": {
+              "name": "bottom"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          }
+        },
+        "items": [
+          {
+            "id": "g_root_or_l",
+            "group": "left"
+          },
+          {
+            "id": "g_root_or_r",
+            "group": "right"
+          },
+          {
+            "id": "g_root_or_t",
+            "group": "top"
+          },
+          {
+            "id": "g_root_or_b",
+            "group": "bottom"
+          }
+        ]
+      },
+      "attrs": {
+        "body": {
+          "stroke": "#60a5fa",
+          "fill": "#162033",
+          "magnet": "passive"
+        },
+        "label": {
+          "fontSize": 12,
+          "fill": "#e5e7eb",
+          "text": "OR",
+          "fontWeight": "bold"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 40,
+        "y": 200
+      },
+      "size": {
+        "width": 220,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_creds",
+      "ports": {
+        "groups": {
+          "left": {
+            "position": {
+              "name": "left"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "right": {
+            "position": {
+              "name": "right"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "top": {
+            "position": {
+              "name": "top"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "bottom": {
+            "position": {
+              "name": "bottom"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          }
+        },
+        "items": [
+          {
+            "id": "n_creds_l",
+            "group": "left"
+          },
+          {
+            "id": "n_creds_r",
+            "group": "right"
+          },
+          {
+            "id": "n_creds_t",
+            "group": "top"
+          },
+          {
+            "id": "n_creds_b",
+            "group": "bottom"
+          }
+        ]
+      },
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "Use valid credentials"
+        }
+      }
+    },
+    {
+      "type": "standard.Circle",
+      "position": {
+        "x": 150,
+        "y": 260
+      },
+      "size": {
+        "width": 38,
+        "height": 38
+      },
+      "angle": 0,
+      "id": "g_creds_or",
+      "gate": "OR",
+      "ports": {
+        "groups": {
+          "left": {
+            "position": {
+              "name": "left"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "right": {
+            "position": {
+              "name": "right"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "top": {
+            "position": {
+              "name": "top"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "bottom": {
+            "position": {
+              "name": "bottom"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          }
+        },
+        "items": [
+          {
+            "id": "g_creds_or_l",
+            "group": "left"
+          },
+          {
+            "id": "g_creds_or_r",
+            "group": "right"
+          },
+          {
+            "id": "g_creds_or_t",
+            "group": "top"
+          },
+          {
+            "id": "g_creds_or_b",
+            "group": "bottom"
+          }
+        ]
+      },
+      "attrs": {
+        "body": {
+          "stroke": "#60a5fa",
+          "fill": "#162033",
+          "magnet": "passive"
+        },
+        "label": {
+          "fontSize": 12,
+          "fill": "#e5e7eb",
+          "text": "OR",
+          "fontWeight": "bold"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": -120,
+        "y": 315
+      },
+      "size": {
+        "width": 200,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_cs",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "Credential Stuffing"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 75,
+        "y": 360
+      },
+      "size": {
+        "width": 200,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_spray",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "password spraying"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": -150,
+        "y": 435
+      },
+      "size": {
+        "width": 220,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_phish",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "phishing for credentials"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 450,
+        "y": 60
+      },
+      "size": {
+        "width": 394,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_mfa",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "bypass MFA via remembered device or backup code"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 405,
+        "y": 375
+      },
+      "size": {
+        "width": 220,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_pwreset",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive",
+          "opacity": 1
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "password reset flow"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 840,
+        "y": 165
+      },
+      "size": {
+        "width": 240,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_intercept",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "intercept reset email"
+        }
+      }
+    },
+    {
+      "type": "standard.Circle",
+      "position": {
+        "x": 760,
+        "y": 380
+      },
+      "size": {
+        "width": 38,
+        "height": 38
+      },
+      "angle": 0,
+      "id": "g_mail_or",
+      "gate": "OR",
+      "attrs": {
+        "body": {
+          "stroke": "#60a5fa",
+          "fill": "#162033",
+          "magnet": "passive"
+        },
+        "label": {
+          "fontSize": 12,
+          "fill": "#e5e7eb",
+          "text": "OR",
+          "fontWeight": "bold"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 645,
+        "y": 480
+      },
+      "size": {
+        "width": 260,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_mail_reuse",
+      "attrs": {
+        "body": {
+          "strokeWidth": 3,
+          "stroke": "#ef4444",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "weak/reused email password"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 915,
+        "y": 390
+      },
+      "size": {
+        "width": 260,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_shared",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "shared device still logged in"
+        }
+      }
+    },
+    {
+      "type": "standard.Rectangle",
+      "position": {
+        "x": 195,
+        "y": 585
+      },
+      "size": {
+        "width": 340,
+        "height": 44
+      },
+      "angle": 0,
+      "id": "n_helpdesk",
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive"
+        },
+        "label": {
+          "fill": "#ffffff",
+          "text": "helpdesk/social engineering password reset"
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "n_root"
+      },
+      "target": {
+        "id": "g_root_or"
+      },
+      "id": "l_r_root",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_root_or"
+      },
+      "target": {
+        "id": "n_creds"
+      },
+      "id": "l_root_creds",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "n_creds"
+      },
+      "target": {
+        "id": "g_creds_or"
+      },
+      "id": "l_creds_or",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_creds_or"
+      },
+      "target": {
+        "id": "n_cs"
+      },
+      "id": "l_or_cs",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_creds_or"
+      },
+      "target": {
+        "id": "n_spray"
+      },
+      "id": "l_or_spray",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_creds_or"
+      },
+      "target": {
+        "id": "n_phish"
+      },
+      "id": "l_or_phish",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_root_or"
+      },
+      "target": {
+        "id": "n_mfa"
+      },
+      "id": "l_root_mfa",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "n_intercept"
+      },
+      "target": {
+        "id": "g_mail_or"
+      },
+      "id": "l_intercept_or",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_mail_or"
+      },
+      "target": {
+        "id": "n_mail_reuse"
+      },
+      "id": "l_or_mail_reuse",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_mail_or"
+      },
+      "target": {
+        "id": "n_shared"
+      },
+      "id": "l_or_shared",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_root_or"
+      },
+      "target": {
+        "id": "n_helpdesk"
+      },
+      "id": "l_root_helpdesk",
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_creds_or",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "n_cs",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "481253e9-8812-41dd-bd2c-61efad7a45f5",
+      "z": 1,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_creds_or",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "n_spray",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "110f3ca7-de61-405a-afe4-e67272239184",
+      "z": 2,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_root_or",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "n_creds",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "a2389445-0f2a-44b4-bf97-9a41c4d6fb1c",
+      "z": 3,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_root_or",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "n_mfa",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "9e8f6feb-9bb6-40e6-b7ea-d313f6c45547",
+      "z": 4,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_root_or",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "n_intercept",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "00830fe0-1063-428f-a9e9-4f86212dbf0b",
+      "z": 5,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Circle",
+      "position": {
+        "x": 540,
+        "y": 285
+      },
+      "size": {
+        "width": 38,
+        "height": 38
+      },
+      "angle": 0,
+      "id": "7cbda537-eacc-4718-90ef-ccfafd7f9ac0",
+      "gate": "AND",
+      "ports": {
+        "groups": {
+          "left": {
+            "position": {
+              "name": "left"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "right": {
+            "position": {
+              "name": "right"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "top": {
+            "position": {
+              "name": "top"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          },
+          "bottom": {
+            "position": {
+              "name": "bottom"
+            },
+            "attrs": {
+              "circle": {
+                "r": 5,
+                "magnet": true,
+                "fill": "#60a5fa",
+                "stroke": "#0b0f14"
+              }
+            }
+          }
+        },
+        "items": [
+          {
+            "group": "left",
+            "id": "c781410c-d12f-4457-8b8a-a76afc46de00"
+          },
+          {
+            "group": "right",
+            "id": "e9388fa2-b450-48ae-8cf3-f7d2dc756bdc"
+          },
+          {
+            "group": "top",
+            "id": "8551e213-70cd-44af-841b-2834f9d85e77"
+          },
+          {
+            "group": "bottom",
+            "id": "44ef48b3-6e93-444a-90e0-6be43d4fccd1"
+          }
+        ]
+      },
+      "z": 6,
+      "attrs": {
+        "body": {
+          "stroke": "#6b7280",
+          "fill": "#1f2937",
+          "magnet": "passive",
+          "opacity": 1
+        },
+        "label": {
+          "fontSize": 12,
+          "fill": "#ffffff",
+          "text": "AND",
+          "fontWeight": "bold"
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "g_root_or",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "7cbda537-eacc-4718-90ef-ccfafd7f9ac0",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "23533ab0-04b3-479d-8581-2f5833108c86",
+      "z": 7,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "7cbda537-eacc-4718-90ef-ccfafd7f9ac0",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "n_pwreset",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "7f857ccc-8673-496d-b374-6629fa845c7e",
+      "z": 8,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    },
+    {
+      "type": "standard.Link",
+      "source": {
+        "id": "7cbda537-eacc-4718-90ef-ccfafd7f9ac0",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "target": {
+        "id": "n_intercept",
+        "anchor": {
+          "name": "center"
+        },
+        "connectionPoint": {
+          "name": "boundary"
+        }
+      },
+      "router": {
+        "name": "normal"
+      },
+      "connector": {
+        "name": "straight"
+      },
+      "id": "0ada2992-16c3-466a-877a-d88e2427e57a",
+      "z": 9,
+      "attrs": {
+        "line": {
+          "stroke": "#9aa0a6",
+          "targetMarker": {
+            "d": "M 10 -5 L 0 0 L 10 5 z",
+            "stroke": "#9aa0a6",
+            "fill": "#9aa0a6"
+          },
+          "sourceMarker": {
+            "type": "none"
+          }
+        }
+      }
+    }
+  ]
+}

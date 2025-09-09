@@ -339,5 +339,149 @@
   "severity": "medium",
   "description": "Account recovery via static questions with answers that are guessable or publicly known.",
   "children": []
+},
+{
+  "id": "CS",
+  "name": "Credential Stuffing",
+  "aliases": ["credential reuse attack", "combo list login", "use leaked credentials", "credential stuffing"],
+  "scenarios": ["auth"],
+  "severity": "high",
+  "description": "Try email/password pairs leaked from other sites to log in. It works because many users reuse passwords across services. Success rates are low per attempt but scale with automation.",
+  "why": "Very common real-world path to account takeover when passwords are reused.",
+  "mitigations": ["Mandatory MFA", "Have I Been Pwned-style breach checks at signup/login", "Credential stuffing detection (IP/ASN velocity, device fingerprinting)", "Adaptive rate limiting and risk-based challenges"],
+  "refs": ["OWASP Automated Threats: OAT-008 Credential Stuffing", "Verizon DBIR (stolen creds prevalence)", "NCSC password reuse guidance"],
+  "children": ["lockout_rate_limit_bypass", "no_mfa_or_weak_mfa"]
+},
+{
+  "id": "password_spraying",
+  "name": "password spraying",
+  "aliases": ["single-shot guesses", "low-and-slow guessing", "try common passwords"],
+  "scenarios": ["auth"],
+  "severity": "medium",
+  "description": "Try a small list of very common passwords across many accounts to avoid per-user lockouts. Emphasizes breadth over depth.",
+  "why": "Beats naive lockout rules because each account only gets a few attempts.",
+  "mitigations": ["Block common passwords", "Account lockouts with observation windows", "IP/agent clustering and throttling", "MFA"],
+  "refs": ["OWASP Automated Threats: OAT-007 Password Spraying", "CWE-307 Improper Restriction of Excessive Authentication Attempts"],
+  "children": ["lockout_rate_limit_bypass", "weak_password_policy", "no_mfa_or_weak_mfa"]
+},
+{
+  "id": "phishing_credentials",
+  "name": "phishing for credentials",
+  "aliases": ["credential phishing", "fake login page", "phish password", "login phishing", "SSO phishing"],
+  "scenarios": ["auth", "doc_link"],
+  "severity": "high",
+  "description": "Trick a user into entering their password (and sometimes a second factor) on a convincing fake page or consent screen.",
+  "why": "Defeats even strong password policies and targets the human.",
+  "mitigations": ["Phishing-resistant MFA (FIDO2/WebAuthn, PIV)", "Verified domains and brand indicators", "User reporting + takedown pipeline", "Conditioned access and device posture"],
+  "refs": ["CISA: Phishing-Resistant MFA", "FIDO Alliance WebAuthn", "APWG Phishing Trends"],
+  "children": ["no_mfa_or_weak_mfa"]
+},
+{
+  "id": "password_reset_flow",
+  "name": "password reset flow",
+  "aliases": ["forgot password", "reset via email", "reset password", "account recovery"],
+  "scenarios": ["auth"],
+  "severity": "high",
+  "description": "Trigger a reset for the victim account and complete it through recovery channels. Often the easiest takeover path if the attacker can reach the user’s email or reset token.",
+  "why": "Recovery flows are as powerful as login but are less tested and often weaker.",
+  "mitigations": ["Rate limit reset attempts", "Strong, non-guessable reset tokens with short TTL", "Notify prior email/phone on change", "Re-auth before sensitive changes", "Require MFA to change credentials"],
+  "refs": ["OWASP Forgot Password Cheat Sheet", "NIST SP 800-63B § Account Recovery"],
+  "children": ["intercept_reset_email", "PRT", "NRL"]
+},
+{
+  "id": "intercept_reset_email",
+  "name": "intercept reset email",
+  "aliases": ["reset email interception", "open reset link in victim inbox", "access victim email"],
+  "scenarios": ["auth"],
+  "severity": "high",
+  "description": "Access the victim’s mailbox (or a device already logged in) to click the reset link and finalize takeover.",
+  "why": "Email is the master key for many accounts; inbox access bypasses strong login controls.",
+  "mitigations": ["Harden mail accounts with MFA", "Out-of-band confirmation to previous factors", "Expire tokens quickly; single-use only", "Login/change alerts"],
+  "refs": ["NCSC: Securing email accounts", "OWASP Forgot Password Cheat Sheet"],
+  "children": ["reused_email_password", "shared_device_still_logged_in"]
+},
+{
+  "id": "reused_email_password",
+  "name": "weak/reused email password",
+  "aliases": ["email credential reuse", "gmail password reuse", "webmail reused password"],
+  "scenarios": ["auth"],
+  "severity": "high",
+  "description": "Log into the victim’s email using previously leaked or reused credentials, enabling reset-link capture and broader pivoting.",
+  "why": "One successful email login often compromises many dependent services.",
+  "mitigations": ["Breach-password checks", "Mandatory MFA on email", "Risk-based login challenges", "User education on password managers"],
+  "refs": ["NIST SP 800-63B § Memorized Secrets", "Have I Been Pwned guidance"],
+  "children": []
+},
+{
+  "id": "shared_device_still_logged_in",
+  "name": "shared device still logged in",
+  "aliases": ["borrowed laptop logged in", "public pc already signed in", "remember me still active"],
+  "scenarios": ["auth", "doc_link"],
+  "severity": "medium",
+  "description": "Use a shared or borrowed device where the victim’s session is still active to access accounts or recover links.",
+  "why": "Bypasses authentication entirely via leftover sessions.",
+  "mitigations": ["Short idle/session lifetimes on untrusted devices", "Re-auth before sensitive actions", "Sign-out everywhere option", "Device/session inventory for users"],
+  "refs": ["OWASP Session Management Cheat Sheet"],
+  "children": []
+},
+{
+  "id": "lockout_rate_limit_bypass",
+  "name": "lockout/rate-limit bypass",
+  "aliases": ["rate limit evasion", "rotate ips", "throttle bypass", "distributed guessing"],
+  "scenarios": ["auth"],
+  "severity": "medium",
+  "description": "Evade per-account or per-IP protections via distribution, rotation, or timing to keep guessing attempts under thresholds.",
+  "why": "Turns weak rate limits into a speed bump instead of a control.",
+  "mitigations": ["Progressive throttling by user+IP+device", "Behavioral detection (velocity, reputation)", "Global attempt counters", "Dynamic blocking lists"],
+  "refs": ["CWE-307 Improper Restriction of Excessive Authentication Attempts", "OWASP ASVS V2 Authentication"],
+  "children": []
+},
+{
+  "id": "NRL",
+  "name": "No Rate Limiting on Reset",
+  "aliases": ["no throttle reset", "unlimited reset attempts", "reset brute force"],
+  "scenarios": ["auth"],
+  "severity": "medium",
+  "description": "Password reset and recovery endpoints allow unlimited or weakly-throttled attempts, enabling token/email brute forcing and automated abuse.",
+  "why": "Reset flows must have protections equivalent to login.",
+  "mitigations": ["Per-identity throttling and cooldowns", "CAPTCHA or challenges under risk", "Global abuse detection on reset endpoints"],
+  "refs": ["CWE-307", "OWASP Forgot Password Cheat Sheet"],
+  "children": []
+},
+{
+  "id": "PRT",
+  "name": "Predictable Password Reset Token",
+  "aliases": ["reset token guess", "weak PRNG token", "predictable reset link", "short token entropy"],
+  "scenarios": ["auth"],
+  "severity": "high",
+  "description": "Reset links or codes use insufficient randomness or length, making tokens guessable or enumerable.",
+  "why": "Weak tokens allow takeover without inbox access.",
+  "mitigations": ["Use CSPRNG tokens ≥128 bits, base64/hex encoded", "Bind tokens to account + request + short TTL", "Single use with immediate invalidation"],
+  "refs": ["CWE-330 Use of Insufficiently Random Values", "OWASP Forgot Password Cheat Sheet"],
+  "children": []
+},
+{
+  "id": "no_mfa_or_weak_mfa",
+  "name": "no or weak MFA",
+  "aliases": ["sms only mfa", "email only code", "2fa optional", "push-only mfa"],
+  "scenarios": ["auth"],
+  "severity": "high",
+  "description": "Accounts can be accessed with only a password or a phishable second factor, leaving users exposed to credential compromise and social engineering.",
+  "why": "Removes the safety net when passwords are compromised.",
+  "mitigations": ["Require phishing-resistant MFA for risky actions", "Step-up MFA on new devices/locations", "Sunset SMS/email OTP for high-risk flows"],
+  "refs": ["NIST SP 800-63B AAL guidance", "CISA: Phishing-Resistant MFA"],
+  "children": []
+},
+
+{
+  "id": "shoulder_surfing_password",
+  "name": "shoulder surfing a password",
+  "aliases": ["watch typing", "look over shoulder", "see them type password"],
+  "scenarios": ["auth"],
+  "severity": "medium",
+  "description": "Observe a victim entering their password to capture it without technical tools.",
+  "children": []
 }
+
+
 ]

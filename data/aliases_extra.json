@@ -1,0 +1,62 @@
+{
+  "combo list": "CS",
+  "use combo list": "CS",
+  "list of leaked creds": "CS",
+  "rotate through leaked pairs": "CS",
+  "spray passwords": "password_spraying",
+  "one try per account": "password_spraying",
+  "few guesses per user": "password_spraying",
+  "fake sso login": "phishing_credentials",
+  "consent screen phish": "phishing_credentials",
+  "push fatigue": "phishing_credentials",
+  "start reset": "password_reset_flow",
+  "trigger reset": "password_reset_flow",
+  "open reset mail": "intercept_reset_email",
+  "click reset link in inbox": "intercept_reset_email",
+  "logged-in shared pc": "shared_device_still_logged_in",
+  "still signed in on public pc": "shared_device_still_logged_in",
+  "reset brute force": "NRL",
+  "no throttle on reset": "NRL",
+  "guess reset token": "PRT",
+  "weak reset token": "PRT",
+  "short token": "PRT",
+  "no 2fa": "no_mfa_or_weak_mfa",
+  "mfa disabled": "no_mfa_or_weak_mfa",
+  "steal password": "phishing_credentials",
+"get their password": "phishing_credentials",
+"take their password": "phishing_credentials",
+"send fake login": "phishing_credentials",
+"send fake sign in page": "phishing_credentials",
+"ask for their password": "pretext_call",
+"ask for their code": "pretext_call",
+"pretend to be support": "pretext_call",
+
+"try different passwords": "password_spraying",
+"keep trying passwords": "password_spraying",
+"try random passwords": "password_spraying",
+"guess common passwords": "password_spraying",
+
+"use old password": "CS",
+"use same password from other site": "CS",
+"log in with leaked password": "CS",
+"reuse leaked password": "CS",
+
+"no code needed": "no_mfa_or_weak_mfa",
+"mfa off": "no_mfa_or_weak_mfa",
+"just password login": "no_mfa_or_weak_mfa",
+
+"avoid lockout": "lockout_rate_limit_bypass",
+"slow down tries": "lockout_rate_limit_bypass",
+"rotate ip to keep trying": "lockout_rate_limit_bypass",
+
+"reset their password": "password_reset_flow",
+"send reset and open link": "intercept_reset_email",
+"open the reset email": "intercept_reset_email",
+
+"use their laptop it's signed in": "shared_device_still_logged_in",
+"find link in browser history": "use_shared_device_history",
+
+"guess their security question": "insecure_security_questions"
+
+
+}

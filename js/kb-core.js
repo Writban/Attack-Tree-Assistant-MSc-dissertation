@@ -981,6 +981,8 @@ Core.explain = function explain(label) {
     return out;
   };
 
+  Core._byId = () => new Map(BY_ID);
+  Core._allEntries = () => Array.from(BY_ID.values());
 
 
   console.info('[KB] v2 matcher/prune enabled (T_HIGH=' + T_HIGH + ', T_MED=' + T_MED + ', minScore=' + MIN_SCORE + ')');

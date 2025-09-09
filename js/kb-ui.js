@@ -14,6 +14,44 @@
   // RQ2 cooldown for prune flags the user kept
   const KEPT = new Set(); // stores lowercased labels the user marked "Keep"
 
+  // Track and apply a "muted" (greyed) style for flagged nodes
+const MUTED = new Set();
+
+function setNodeMuted(el, on) {
+  if (!el || !el.isElement?.()) return;
+
+  if (on) {
+    if (!el.get('kbMutedOrig')) {
+      el.set('kbMutedOrig', {
+        bodyFill:   el.attr?.('body/fill'),
+        bodyStroke: el.attr?.('body/stroke'),
+        bodyOp:     el.attr?.('body/opacity'),
+        labelFill:  el.attr?.('label/fill')
+      });
+    }
+    el.attr({
+      body:  { fill: '#111827', stroke: '#374151', opacity: 0.6 },
+      label: { fill: '#6b7280' }
+    });
+  } else {
+    const o = el.get('kbMutedOrig') || {};
+    el.attr({
+      body:  { fill: (o.bodyFill ?? '#1f2937'), stroke: (o.bodyStroke ?? '#6b7280'), opacity: (o.bodyOp ?? 1) },
+      label: { fill: (o.labelFill ?? '#ffffff') }
+    });
+    el.unset('kbMutedOrig');
+  }
+}
+
+function setNodeMutedById(id, on) {
+  try {
+    const el = G?.getCell?.(id);
+    if (!el) return;
+    setNodeMuted(el, on);
+  } catch {}
+}
+
+
   UI.mount = function mount(graph, paper) {
     G = graph; P = paper;
 
@@ -41,7 +79,8 @@
     renderSuggest(false); renderPrune(false); renderExplain();
     // recalc prune on graph changes
     // Recalc prune on *any* meaningful graph mutation
-G.on('add remove change', _.throttle(() => renderPrune(true), 150));
+const throttled = (window._?.throttle ? _.throttle(() => renderPrune(true), 150) : () => renderPrune(true));
+G.on('add remove change', throttled);
 // Also refresh after a full import/reset (e.g., Load)
 G.on('reset', () => renderPrune(true));
   };
@@ -62,13 +101,52 @@ G.on('reset', () => renderPrune(true));
     hdr.innerHTML = `<div class="title">Suggestions ${parentLabel ? `for “${escapeHtml(parentLabel)}”` : '(root)'}</div>`;
     box.appendChild(hdr);
 
-    if (!top.length && !more.length) {
-      const empty = document.createElement('div');
-      empty.className = 'small';
-      empty.textContent = 'No suggestions right now.';
-      hdr.appendChild(empty);
-      return;
+if (!top.length && !more.length) {
+  const empty = document.createElement('div');
+  empty.className = 'small';
+  empty.textContent = 'No suggestions right now.';
+  hdr.appendChild(empty);
+
+  (async () => {
+    try {
+      if (!window.KB?.sem || !CURRENT_PARENT) return;
+      const ok = await KB.sem.ready?.();
+      if (!ok) return;
+
+      const matches = await KB.sem.topK(CURRENT_PARENT, 3);
+      if (!matches || !matches.length) return;
+
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `<div class="title">Semantic suggestions</div>`;
+      box.appendChild(card);
+
+      const list = document.createElement('div');
+      list.className = 'list';
+
+      matches.forEach((m, i) => {
+        const name = (KB.core.explain?.(m.id)?.title) || m.id;
+        const sug = {
+          id: m.id,
+          name,
+          source: 'semantic',
+          reason: `Similar to “${CURRENT_PARENT}”`,
+          score: m.score
+        };
+        list.appendChild(suggestionRow(sug, i + 1));
+        try { if (emitLog) KB.core.log('suggest_semantic_shown', { id: m.id, name, parent: CURRENT_PARENT, score: m.score }); } catch {}
+      });
+
+      box.appendChild(list);
+    } catch (e) {
+      console.warn('[suggest:semantic]', e);
     }
+  })();
+
+  return;
+}
+
+
 
     const list = document.createElement('div'); list.className = 'list';
     top.forEach((sug, i) => {
@@ -221,7 +299,6 @@ function toggleSuggestExplanation(rowEl, sug) {
     window.autoSizeElement?.(el);
   }
 
-  /* ---------------- Prune ---------------- */
 /* ---------------- Prune ---------------- */
 function renderPrune(emitLog) {
   const box = document.getElementById('tab-review');
@@ -238,6 +315,18 @@ function renderPrune(emitLog) {
   const hdr = document.createElement('div'); hdr.className = 'card';
   hdr.innerHTML = `<div class="title">Review (prune candidates)</div>`;
   box.appendChild(hdr);
+
+  // --- Grey-out handling: clear previous greys, then grey out current flags ---
+MUTED.forEach((id) => setNodeMutedById(id, false));
+MUTED.clear();
+
+for (const f of flags) {
+  if (f.elementId) {
+    setNodeMutedById(f.elementId, true);
+    MUTED.add(f.elementId);
+  }
+}
+
 
   if (!flags.length) {
     const empty = document.createElement('div'); empty.className = 'small';
@@ -302,6 +391,95 @@ function renderPrune(emitLog) {
 
     box.appendChild(moreWrap);
   }
+
+  // ---- Semantic duplicates (asynchronous, non-blocking) ----
+(async () => {
+  try {
+    if (!window.KB?.sem) return;
+    const ready = await KB.sem.ready?.();
+    if (!ready) return;
+
+    // Collect non-gate labels from the graph
+    const nodes = (G.getElements?.() || []).filter(n => !n.get?.('gate'));
+    const labels = nodes.map(n => ({ id: n.id, label: n.attr?.('label/text') || '' }))
+                        .filter(x => x.label && !KB.core.isScenarioGoal?.(x.label));
+
+    // Map each label to its best KB id (if above threshold)
+    const groups = new Map(); // kbId -> [{nodeId,label,score}]
+    for (const item of labels) {
+      const m = await KB.sem.best(item.label, 1);
+      if (!m || !m.id || typeof m.score !== 'number') continue;
+      const t = (KB.core.getConfig?.().matching?.semantic?.threshold ?? 0.60);
+      if (m.score < t) continue;
+      if (!groups.has(m.id)) groups.set(m.id, []);
+      groups.get(m.id).push({ nodeId: item.id, label: item.label, score: m.score });
+    }
+
+    // For any KB id mapped by 2+ different labels, flag as duplicates
+    const dupSets = [...groups.values()].filter(arr => arr.length >= 2);
+    if (!dupSets.length) return;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="title">Possible duplicates (semantic)</div>`;
+    box.appendChild(card);
+
+    const list = document.createElement('div');
+    list.className = 'list';
+
+    dupSets.forEach(set => {
+      // Keep the highest score as the “original” suggestion to keep; the rest are removable
+      const sorted = set.sort((a, b) => b.score - a.score);
+      const keep = sorted[0];
+      const rest = sorted.slice(1);
+
+      rest.forEach(d => {
+        const row = document.createElement('div'); row.className = 'row';
+        const left = document.createElement('div'); left.style.flex = '1';
+
+        const title = document.createElement('div');
+        title.innerHTML = `<strong>${escapeHtml(d.label)}</strong> <span class="small muted">(~${Math.round(d.score * 100)}% similar)</span>`;
+
+        const why = document.createElement('div'); why.className = 'small';
+        why.textContent = `Looks like a duplicate of “${keep.label}”.`;
+        left.appendChild(title); left.appendChild(why);
+
+        const btns = document.createElement('div');
+
+        const keepBtn = document.createElement('button');
+        keepBtn.textContent = 'Keep';
+        keepBtn.onclick = () => {
+          try { KB.core.log('prune_keep_semantic_dup', { label: d.label, keptAgainst: keep.label }); } catch {}
+          // cooldown this label so it won't repeat
+          KEPT.add((d.label || '').toLowerCase());
+          renderPrune(false);
+        };
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Remove';
+        delBtn.style.marginLeft = '6px';
+        delBtn.onclick = () => {
+          const el = G.getCell(d.nodeId);
+          if (!el) return;
+          try { (G.getConnectedLinks(el) || []).forEach(l => l.remove()); } catch {}
+          el.remove();
+          try { KB.core.log('prune_remove_semantic_dup', { label: d.label, removedAgainst: keep.label }); } catch {}
+          renderPrune(false);
+          renderSuggest(false);
+        };
+
+        btns.appendChild(keepBtn); btns.appendChild(delBtn);
+        row.appendChild(left); row.appendChild(btns);
+        list.appendChild(row);
+      });
+    });
+
+    box.appendChild(list);
+  } catch (e) {
+    console.warn('[review:semantic-duplicates]', e);
+  }
+})();
+
 }
 
 
@@ -378,6 +556,44 @@ card.innerHTML = `
 box.appendChild(card);
 try { KB.core.log('explain_view', { name: title }); } catch {}
 
+// --- semantic fallback: if the main explain had nothing useful, show closest known techniques
+(async () => {
+  const noUsefulText = (!raw.summary && !raw.description) || /No explanation available/i.test(body);
+  if (!noUsefulText) return;
+  if (!window.KB?.sem) return;
+
+  try {
+    const ok = await KB.sem.ready?.();
+    if (!ok) return;
+
+    const alts = await KB.sem.topK(label, 3);
+    if (!alts || !alts.length) return;
+
+    const altCard = document.createElement('div');
+    altCard.className = 'card';
+    const items = alts.map(a => {
+      const m = KB.core.explain?.(a.id) || {};
+      const name = m.title || m.name || a.id;
+      const pct  = Math.round((a.score || 0) * 100);
+      return `<li>${escapeHtml(name)} <span class="small muted">(${pct}% similar)</span></li>`;
+    }).join('');
+
+    altCard.innerHTML = `
+      <div class="title">Closest known technique</div>
+      <div class="body">
+        We couldn’t find an exact match for “${escapeHtml(label)}”. Did you mean:
+        <ul style="margin-top:6px; padding-left:18px">${items}</ul>
+      </div>
+    `;
+    box.appendChild(altCard);
+    try { KB.core.log('explain_semantic_fallback', { label, matches: alts.map(a => a.id) }); } catch {}
+  } catch (e) {
+    console.warn('[explain:fallback]', e);
+  }
+})();
+
+
+
 
   }
 
@@ -385,4 +601,7 @@ try { KB.core.log('explain_view', { name: title }); } catch {}
   function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c]));
   }
+
+  
+  
 })();
