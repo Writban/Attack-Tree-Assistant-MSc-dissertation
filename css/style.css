@@ -172,3 +172,8 @@ svg g.link-tools, svg g.tools { display: none !important; }
   color:#9ca3af;
   border-color:#374151;
 }
+
+/* Grey-out for Review-flagged nodes (applied via view class, no model change) */
+.kb-muted .body { fill: #111827 !important; stroke: #374151 !important; opacity: .6 !important; }
+.kb-muted .label { fill: #6b7280 !important; }
+.kb-muted .port-body { fill: #253142 !important; opacity: .6 !important; }

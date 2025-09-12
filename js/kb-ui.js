@@ -14,42 +14,27 @@
   // RQ2 cooldown for prune flags the user kept
   const KEPT = new Set(); // stores lowercased labels the user marked "Keep"
 
-  // Track and apply a "muted" (greyed) style for flagged nodes
+
+
+// Track and apply a "muted" (greyed) style for flagged nodes — view class only (no model changes)
 const MUTED = new Set();
+let PRUNE_RENDER_GEN = 0;
 
-function setNodeMuted(el, on) {
-  if (!el || !el.isElement?.()) return;
-
-  if (on) {
-    if (!el.get('kbMutedOrig')) {
-      el.set('kbMutedOrig', {
-        bodyFill:   el.attr?.('body/fill'),
-        bodyStroke: el.attr?.('body/stroke'),
-        bodyOp:     el.attr?.('body/opacity'),
-        labelFill:  el.attr?.('label/fill')
-      });
-    }
-    el.attr({
-      body:  { fill: '#111827', stroke: '#374151', opacity: 0.6 },
-      label: { fill: '#6b7280' }
-    });
-  } else {
-    const o = el.get('kbMutedOrig') || {};
-    el.attr({
-      body:  { fill: (o.bodyFill ?? '#1f2937'), stroke: (o.bodyStroke ?? '#6b7280'), opacity: (o.bodyOp ?? 1) },
-      label: { fill: (o.labelFill ?? '#ffffff') }
-    });
-    el.unset('kbMutedOrig');
-  }
+function isAssistOn() {
+  // Start Assist sets 'assistant-on' on <body>; gate greying by this
+  return !!document.body && document.body.classList.contains('assistant-on');
 }
 
 function setNodeMutedById(id, on) {
   try {
     const el = G?.getCell?.(id);
     if (!el) return;
-    setNodeMuted(el, on);
+    const view = P?.findViewByModel?.(el);
+    if (!view || !view.el) return;
+    view.el.classList.toggle('kb-muted', !!on);
   } catch {}
 }
+
 
 
   UI.mount = function mount(graph, paper) {
@@ -301,6 +286,8 @@ function toggleSuggestExplanation(rowEl, sug) {
 
 /* ---------------- Prune ---------------- */
 function renderPrune(emitLog) {
+  const gen = ++PRUNE_RENDER_GEN;
+
   const box = document.getElementById('tab-review');
   if (!box) return;
   box.innerHTML = '';
@@ -316,16 +303,19 @@ function renderPrune(emitLog) {
   hdr.innerHTML = `<div class="title">Review (prune candidates)</div>`;
   box.appendChild(hdr);
 
-  // --- Grey-out handling: clear previous greys, then grey out current flags ---
+// --- Grey-out handling (only AFTER Start Assist): clear then apply
 MUTED.forEach((id) => setNodeMutedById(id, false));
 MUTED.clear();
 
-for (const f of flags) {
-  if (f.elementId) {
-    setNodeMutedById(f.elementId, true);
-    MUTED.add(f.elementId);
+if (isAssistOn()) {
+  for (const f of flags) {
+    if (f.elementId) {
+      setNodeMutedById(f.elementId, true);
+      MUTED.add(f.elementId);
+    }
   }
 }
+
 
 
   if (!flags.length) {
