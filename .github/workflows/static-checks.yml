@@ -1,0 +1,44 @@
+name: Static checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check JavaScript syntax
+        run: find js -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Validate JSON data
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          paths = list(Path('data').rglob('*.json'))
+          for path in paths:
+              with path.open(encoding='utf-8') as handle:
+                  json.load(handle)
+          print(f'Validated {len(paths)} JSON files')
+          PY
+
+      - name: Verify essential application files
+        run: |
+          test -f index.html
+          test -f css/style.css
+          test -f data/config.json
+          test -f data/attack_patterns.json
+          test -d data/scenarios
