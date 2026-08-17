@@ -7,7 +7,6 @@
   KB.ai = AI;
 
   const DEFAULT_API = 'http://localhost:3000/api/ai';
-  let selectedLabel = null;
 
   AI.getEndpoint = function getEndpoint() {
     return window.ATTACK_TREE_AI_API ||
@@ -22,7 +21,8 @@
   };
 
   function currentSelection() {
-    if (selectedLabel) return selectedLabel;
+    // The toolbar label is the source of truth because app.js also updates it when
+    // the user clears a selection. This prevents a stale AI Explain request.
     const text = document.getElementById('sel-label')?.textContent || '';
     const match = text.match(/^Selected:\s*(.+)$/i);
     return match ? match[1].trim() : null;
@@ -217,10 +217,6 @@
       tab.appendChild(makeAiCard(task));
     }
   }
-
-  document.addEventListener('kb:selection', (event) => {
-    selectedLabel = event?.detail?.parent || null;
-  });
 
   document.addEventListener('kb:canvas:ready', () => {
     ensureSections();
