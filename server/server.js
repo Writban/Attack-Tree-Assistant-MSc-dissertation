@@ -8,12 +8,13 @@ dotenv.config();
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const model = process.env.OPENAI_MODEL || "gpt-5.6";
+const client = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
-if (!process.env.OPENAI_API_KEY) {
-  console.warn("[attack-tree-ai] OPENAI_API_KEY is not set. /api/ai requests will fail until it is configured.");
+if (!client) {
+  console.warn("[attack-tree-ai] OPENAI_API_KEY is not set. The server will run, but /api/ai will remain disabled until it is configured.");
 }
-
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const configuredOrigins = String(process.env.ALLOWED_ORIGINS || "")
   .split(",")
@@ -31,7 +32,6 @@ const allowedOrigins = configuredOrigins.length ? configuredOrigins : developmen
 
 app.use(cors({
   origin(origin, callback) {
-    // Requests without an Origin header (for example curl or server-to-server) are allowed.
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error("Origin not allowed by CORS"));
   }
@@ -116,12 +116,12 @@ const taskInstructions = {
 };
 
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true, service: "attack-tree-ai", model });
+  res.json({ ok: true, service: "attack-tree-ai", model, configured: Boolean(client) });
 });
 
 app.post("/api/ai", rateLimit, async (req, res) => {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!client) {
       return res.status(503).json({ ok: false, error: "AI service is not configured." });
     }
 
